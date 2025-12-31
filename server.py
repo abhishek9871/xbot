@@ -11,6 +11,7 @@ import os
 import json
 import sqlite3
 import random
+import requests
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
@@ -19,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
-from dotenv import load_dotenv # Added for environment variable loading
+from dotenv import load_dotenv
 
 # ============================================================================
 # CONFIGURATION
@@ -30,8 +31,12 @@ load_dotenv()
 
 # --- Configurations ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+TMDB_API_KEY = "61d95006877f80fb61358dbb78f153c3"
+TMDB_BASE_URL = "https://api.themoviedb.org/3"
+
 if not GROQ_API_KEY:
     print("WARNING: GROQ_API_KEY not found in environment variables!")
+
 GROQ_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct"
 DATABASE_PATH = "xbot_memory.db"
 SITE_URL = "streamixapp.pages.dev"
@@ -70,72 +75,17 @@ DAILY_SCHEDULE = [
 
 # Native Language Keywords
 KEYWORDS = {
-    "en": [
-        '"where to watch" free',
-        '"best free streaming" site',
-        '"netflix alternative" free',
-        '"netflix too expensive"',
-        '"streaming site" no ads',
-    ],
-    "fr": [
-        '"où regarder" film gratuit',
-        '"site streaming gratuit"',
-        '"alternative netflix gratuit"',
-        '"netflix trop cher"',
-    ],
-    "de": [
-        '"wo kann ich schauen" kostenlos',
-        '"streaming seite kostenlos"',
-        '"netflix alternative kostenlos"',
-        '"netflix zu teuer"',
-    ],
-    "es": [
-        '"dónde ver" películas gratis',
-        '"sitio streaming gratis"',
-        '"alternativa netflix gratis"',
-        '"netflix muy caro"',
-    ],
-    "pt": [
-        '"onde assistir" filme grátis',
-        '"site streaming grátis"',
-        '"alternativa netflix grátis"',
-        '"netflix muito caro"',
-    ],
-    "it": [
-        '"dove guardare" film gratis',
-        '"sito streaming gratuito"',
-        '"alternativa netflix gratis"',
-    ],
-    "nl": [
-        '"waar kijken" gratis',
-        '"gratis streaming site"',
-        '"netflix alternatief gratis"',
-    ],
-    "pl": [
-        '"gdzie oglądać" za darmo',
-        '"darmowy streaming"',
-        '"alternatywa netflix"',
-    ],
-    "ja": [
-        "映画 無料 視聴",
-        "無料 ストリーミング サイト",
-        "Netflix 代替 無料",
-        "どこで見れる 映画",
-        "無料で映画を見る方法",
-    ],
-    "ko": [
-        "영화 무료 보기",
-        "무료 스트리밍 사이트",
-        "넷플릭스 대안 무료",
-        "어디서 볼 수 있어",
-        "드라마 무료 시청",
-    ],
-    "id": [
-        "nonton film gratis",
-        "situs streaming gratis",
-        "alternatif netflix gratis",
-        "dimana nonton film",
-    ],
+    "en": ['"where to watch" free', '"best free streaming" site', '"netflix separate" free', '"streaming site" no ads'],
+    "fr": ['"où regarder" film gratuit', '"site streaming gratuit"', '"alternative netflix gratuit"'],
+    "de": ['"wo kann ich schauen" kostenlos', '"streaming seite kostenlos"'],
+    "es": ['"dónde ver" películas gratis', '"sitio streaming gratis"'],
+    "pt": ['"onde assistir" filme grátis', '"site streaming grátis"'],
+    "it": ['"dove guardare" film gratis', '"sito streaming gratuito"'],
+    "nl": ['"waar kijken" gratis', '"gratis streaming site"'],
+    "pl": ['"gdzie oglądać" za darmo', '"darmowy streaming"'],
+    "ja": ["映画 無料 視聴", "無料 ストリーミング サイト"],
+    "ko": ["영화 무료 보기", "무료 스트리밍 사이트"],
+    "id": ["nonton film gratis", "situs streaming gratis"],
 }
 
 # Language Names for LLM
@@ -205,6 +155,34 @@ def init_database():
             status TEXT DEFAULT 'RUNNING'
         )
     """)
+
+    # --- NEW TABLES FOR SMART SEARCH ---
+    
+    # Search Term Pool (Stores generated high-intent terms)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS search_term_pool (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            term TEXT UNIQUE,
+            tmdb_id INTEGER,
+            content_type TEXT,
+            title TEXT,
+            year TEXT,
+            popularity REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMP,
+            use_count INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0
+        )
+    """)
+    
+    # TMDB Cache (Stores raw TMDB results to save API calls)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tmdb_cache (
+            endpoint TEXT PRIMARY KEY,
+            data TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -220,6 +198,182 @@ def get_db():
         conn.close()
 
 # ============================================================================
+# TMDB CLIENT
+# ============================================================================
+
+class TMDBClient:
+    def __init__(self):
+        self.api_key = TMDB_API_KEY
+        self.base_url = TMDB_BASE_URL
+        
+    def _get(self, endpoint: str, params: Dict = None) -> Optional[Dict]:
+        """Make GET request to TMDB with caching."""
+        # Check cache first
+        cache_key = f"{endpoint}:{json.dumps(params, sort_keys=True)}" if params else endpoint
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT data, fetched_at FROM tmdb_cache WHERE endpoint = ?", (cache_key,))
+            row = cursor.fetchone()
+            
+            if row:
+                fetched_at = datetime.fromisoformat(row["fetched_at"])
+                # Cache valid for 24 hours
+                if datetime.utcnow() - fetched_at < timedelta(hours=24):
+                    return json.loads(row["data"])
+        
+        # Fetch from API
+        if not params:
+            params = {}
+        params["api_key"] = self.api_key
+        
+        try:
+            response = requests.get(f"{self.base_url}{endpoint}", params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Save to cache
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT OR REPLACE INTO tmdb_cache (endpoint, data, fetched_at) VALUES (?, ?, ?)",
+                    (cache_key, json.dumps(data), datetime.utcnow().isoformat())
+                )
+                conn.commit()
+            
+            return data
+        except Exception as e:
+            print(f"TMDB API Error: {e}")
+            return None
+
+    def get_trending_movies(self) -> List[Dict]:
+        data = self._get("/trending/movie/day")
+        return data.get("results", []) if data else []
+
+    def get_trending_tv(self) -> List[Dict]:
+        data = self._get("/trending/tv/day")
+        return data.get("results", []) if data else []
+
+    def get_popular_movies(self) -> List[Dict]:
+        data = self._get("/movie/popular")
+        return data.get("results", []) if data else []
+
+# ============================================================================
+# SMART SEARCH LOGIC
+# ============================================================================
+
+class SmartSearch:
+    def __init__(self):
+        self.tmdb = TMDBClient()
+        
+    def generate_search_terms(self):
+        """Fetch trending content and populate search term pool."""
+        movies = self.tmdb.get_trending_movies()
+        tv_shows = self.tmdb.get_trending_tv()
+        
+        new_terms = 0
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Process Movies
+            for m in movies:
+                title = m.get("title")
+                year = m.get("release_date", "")[:4]
+                if not title: continue
+                
+                queries = [
+                    f'"{title}" watch free',
+                    f'"{title}" streaming',
+                    f'where to watch "{title}"',
+                    f'"{title}" online free',
+                    f'"{title}" {year} stream'
+                ]
+                
+                for q in queries:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (q, m["id"], "movie", title, year, m["popularity"]))
+                        new_terms += 1
+                    except sqlite3.IntegrityError:
+                        pass # Already exists
+            
+            # Process TV Shows
+            for t in tv_shows:
+                name = t.get("name")
+                year = t.get("first_air_date", "")[:4]
+                if not name: continue
+                
+                queries = [
+                    f'"{name}" watch free',
+                    f'"{name}" streaming',
+                    f'where to watch "{name}"',
+                    f'"{name}" free episodes',
+                    f'"{name}" online free'
+                ]
+                
+                for q in queries:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (q, t["id"], "tv", name, year, t["popularity"]))
+                        new_terms += 1
+                    except sqlite3.IntegrityError:
+                        pass
+            
+            conn.commit()
+        
+        print(f"Generated {new_terms} new high-intent search terms.")
+
+    def get_next_term(self) -> Dict[str, Any]:
+        """Get the best unused search term."""
+        # Ensure pool is populated
+        self.generate_search_terms()
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Select a term that hasn't been used in 24 hours, prioritizing popularity
+            yesterday = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+            
+            cursor.execute("""
+                SELECT * FROM search_term_pool 
+                WHERE last_used_at IS NULL OR last_used_at < ?
+                ORDER BY popularity DESC, random()
+                LIMIT 1
+            """, (yesterday,))
+            
+            row = cursor.fetchone()
+            
+            if row:
+                # Update usage stats
+                cursor.execute("""
+                    UPDATE search_term_pool 
+                    SET last_used_at = ?, use_count = use_count + 1
+                    WHERE id = ?
+                """, (datetime.utcnow().isoformat(), row["id"]))
+                conn.commit()
+                
+                return {
+                    "search_term": row["term"],
+                    "title": row["title"],
+                    "year": row["year"],
+                    "tmdb_id": row["tmdb_id"],
+                    "content_type": row["content_type"]
+                }
+            
+            # Fallback if all terms used recently (unlikely)
+            return {
+                "search_term": '"where to watch" free',
+                "title": "Generic",
+                "year": "",
+                "tmdb_id": 0,
+                "content_type": "generic"
+            }
+
+# ============================================================================
 # PYDANTIC MODELS
 # ============================================================================
 
@@ -228,6 +382,9 @@ class TweetAnalysisRequest(BaseModel):
     tweet_text: str
     user_handle: str
     parent_text: Optional[str] = None
+    # Context from Smart Search
+    movie_title: Optional[str] = None
+    movie_year: Optional[str] = None
 
 class TweetAnalysisResponse(BaseModel):
     action: str  # "REPLY" or "SKIP"
@@ -245,8 +402,15 @@ class ScheduleResponse(BaseModel):
     location: str
     language: str
     lang_code: str
-    keywords: List[str]
     current_trends: List[str]
+    keywords: List[str]
+
+class SmartSearchResponse(BaseModel):
+    search_term: str
+    title: str
+    year: str
+    tmdb_id: int
+    content_type: str
 
 # ============================================================================
 # GROQ LLM CLIENT
@@ -264,93 +428,60 @@ class LLMClient:
         lang_code: str,
         region: str,
         trends: List[str],
+        movie_title: str = None, # NEW: Context
+        movie_year: str = None,  # NEW: Context
         parent_text: Optional[str] = None
     ) -> Dict[str, Any]:
         """Analyze tweet intent and draft a reply."""
         
         if not self.client:
-            # Mock response for testing without API key
             return {
                 "action": "REPLY",
-                "reason": "Movie/TV intent detected",
-                "draft": f"[MOCK] Check out {SITE_URL} for free streaming!",
+                "reason": "MOCK: Intent detected",
+                "draft": f"[MOCK] Check out {SITE_URL}!",
                 "trend": trends[0] if trends else None
             }
         
         lang_name = LANG_NAMES.get(lang_code, "English")
         trends_str = ", ".join(trends[:5]) if trends else "None"
         
-        # Get a random reply template for variation
-        reply_templates = [
-            "I use {site} for this - works great!",
-            "Been using {site} for months, no complaints",
-            "{site} has it, saved me so much time",
-            "Try {site} - that's what I use",
-            "Found it on {site} last week",
-            "Someone recommended {site} to me, solid choice",
-            "{site} is underrated for this",
-            "My friends use {site}, works well",
-        ]
-        import random
-        template_hint = random.choice(reply_templates)
-        
+        # Contextual Prompt
+        context_block = ""
+        if movie_title:
+            context_block = f"""
+=== CONTEXT ===
+This search was targeting: "{movie_title}" ({movie_year})
+The user matched the search term, but verify they are actually talking about THIS movie/show.
+"""
+
         system_prompt = f"""You are a NATIVE {lang_name} speaker and movie enthusiast on X (Twitter).
 You are located in {region}. You speak ONLY {lang_name}.
+{context_block}
 
 === CRITICAL RULES ===
 
-RULE 1 - LANGUAGE: Your ENTIRE reply MUST be in {lang_name}. 
-- If {lang_name} is French, write ENTIRELY in French
-- If {lang_name} is Japanese, write ENTIRELY in 日本語
-- If {lang_name} is Korean, write ENTIRELY in 한국어
-- If {lang_name} is Spanish, write ENTIRELY in Spanish
-- ZERO English words allowed in non-English replies (except the URL)
+RULE 1 - LANGUAGE: Your ENTIRE reply MUST be in {lang_name}.
+RULE 2 - TREND INJECTION: You MUST include a hashtag from: {trends_str}
+RULE 3 - INTENT VERIFICATION:
+- IF context provided: CONFIRM tweet is about "{movie_title}".
+- User must be looking for where to watch/stream it.
+- SKIP if: asking for reviews, discussing plot, or already found a link.
+- SKIP if: talking about something completely different.
 
-RULE 2 - TREND INJECTION: You MUST include a hashtag from these local trends:
-LOCAL TRENDS: {trends_str}
-Pick ONE that relates to movies/entertainment if possible. If none provided, skip hashtag.
-
-RULE 3 - REPLY VARIATION: Each reply must be UNIQUE. Use different phrasings.
-Example variation style: "{template_hint}"
-DO NOT always say "My go-to is..." - vary your responses!
-
-RULE 4 - NATURAL TONE: Sound like a real person, not a bot or ad.
-- Be casual and conversational
-- Reference the specific movie/show they mentioned
-- Don't be overly enthusiastic or promotional
-
-=== YOUR TASK ===
-
-1. CLASSIFY the tweet:
-   - MOVIE_INTENT: Wants to watch movies/TV shows/anime/drama
-   - SPORT_INTENT: Wants live sports (skip these)
-   - OTHER: Not about streaming (skip these)
-
-2. IF MOVIE_INTENT:
-   - Write a short, casual reply in {lang_name}
-   - Mention the specific content they asked about
-   - Include link: {SITE_URL}
-   - Include ONE hashtag from the trends
-   - Keep it under 200 characters
-
-3. IF SPORT_INTENT or OTHER:
-   - action = "SKIP"
-
-=== EXAMPLES ===
-
-English example: "Just watched it on streamixapp.pages.dev - solid quality! #Netflix"
-French example: "Je l'ai trouvé sur streamixapp.pages.dev, ça marche bien #Cinéma"
-Japanese example: "streamixapp.pages.dev で見れるよ！画質もいい #映画"
-Spanish example: "Yo la vi en streamixapp.pages.dev, sin problemas #Netflix"
+RULE 4 - NATURAL TONE: Casual, short, helpful.
+RULE 5 - PROMOTION: You MUST casually recommend "streamixapp.pages.dev" as the solution.
+   - Example: "Found it on streamixapp.pages.dev, no ads there."
+   - Example: "Just watch on streamixapp.pages.dev"
+   - Do NOT be overly salesy. Just helpful.
 
 === OUTPUT FORMAT ===
-JSON only, no markdown:
-{{"action": "REPLY" or "SKIP", "reason": "brief explanation", "draft": "your {lang_name} reply with hashtag" or null, "trend": "hashtag you used" or null}}
+JSON only:
+{{"action": "REPLY" or "SKIP", "reason": "why", "draft": "reply text", "trend": "used hashtag"}}
 """
 
         user_message = f"Tweet: {tweet_text}"
         if parent_text:
-            user_message += f"\nContext (parent tweet): {parent_text}"
+            user_message += f"\nParent Tweet: {parent_text}"
 
         try:
             response = self.client.chat.completions.create(
@@ -364,25 +495,16 @@ JSON only, no markdown:
             )
             
             result_text = response.choices[0].message.content.strip()
-            
-            # Parse JSON response
-            # Handle potential markdown code blocks
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
-                if result_text.startswith("json"):
-                    result_text = result_text[4:]
+                if result_text.strip().startswith("json"):
+                    result_text = result_text.strip()[4:]
             
-            result = json.loads(result_text)
-            return result
+            return json.loads(result_text)
             
         except Exception as e:
             print(f"LLM Error: {e}")
-            return {
-                "action": "SKIP",
-                "reason": f"LLM error: {str(e)}",
-                "draft": None,
-                "trend": None
-            }
+            return {"action": "SKIP", "reason": f"Error: {e}", "draft": None}
 
 # ============================================================================
 # CORE LOGIC
@@ -390,11 +512,9 @@ JSON only, no markdown:
 
 def get_current_schedule() -> Dict[str, Any]:
     """Get the current target based on UTC hour."""
-    now = datetime.utcnow()
+    now = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
     hour = now.hour
-    
     slot = DAILY_SCHEDULE[hour]
-    
     return {
         "region": slot["region"],
         "location": slot["location"],
@@ -407,26 +527,15 @@ def check_duplicate(tweet_id: str, user_handle: str) -> tuple[bool, str]:
     """Check if we should skip this tweet."""
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Check if tweet already replied
         cursor.execute("SELECT 1 FROM replied_tweets WHERE tweet_id = ?", (tweet_id,))
-        if cursor.fetchone():
-            return True, "Already replied to this tweet"
+        if cursor.fetchone(): return True, "Already replied"
         
-        # Check if tweet already scanned
         cursor.execute("SELECT 1 FROM scanned_tweets WHERE tweet_id = ?", (tweet_id,))
-        if cursor.fetchone():
-            return True, "Already scanned this tweet"
+        if cursor.fetchone(): return True, "Already scanned"
         
-        # Check user cooldown (max 2 replies per user per 24h)
         yesterday = datetime.utcnow() - timedelta(hours=24)
-        cursor.execute(
-            "SELECT COUNT(*) FROM replied_tweets WHERE user_handle = ? AND timestamp > ?",
-            (user_handle, yesterday.isoformat())
-        )
-        count = cursor.fetchone()[0]
-        if count >= 2:
-            return True, "User cooldown (max 2 replies per 24h)"
+        cursor.execute("SELECT COUNT(*) FROM replied_tweets WHERE user_handle = ? AND timestamp > ?", (user_handle, yesterday.isoformat()))
+        if cursor.fetchone()[0] >= 2: return True, "User cooldown"
     
     return False, ""
 
@@ -441,7 +550,7 @@ def log_reply(tweet_id: str, user_handle: str, region: str, language: str, reply
         conn.commit()
 
 def log_scanned(tweet_id: str, skip_reason: str):
-    """Log a scanned tweet (even if skipped)."""
+    """Log a scanned tweet."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -456,9 +565,17 @@ def get_cached_trends(region: str) -> List[str]:
         cursor = conn.cursor()
         cursor.execute("SELECT trends FROM trend_cache WHERE region = ?", (region,))
         row = cursor.fetchone()
+        
         if row:
-            return json.loads(row["trends"])
-    return []
+            try:
+                trends = json.loads(row["trends"])
+                if trends and len(trends) > 0:
+                    return trends
+            except:
+                pass
+                
+    # Fallback if cache empty or invalid
+    return ["#Streaming", "#Movies", "#WatchOnline", "#Cinema", "#WhatToWatch"]
 
 def update_trend_cache(region: str, trends: List[str]):
     """Update trend cache for a region."""
@@ -466,46 +583,32 @@ def update_trend_cache(region: str, trends: List[str]):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO trend_cache (region, trends, harvested_at) VALUES (?, ?, ?)",
-            (region, json.dumps(trends), datetime.utcnow().isoformat())
+            (region, json.dumps(trends), datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat())
         )
         conn.commit()
 
 def get_stats() -> Dict[str, Any]:
-    """Get bot statistics."""
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Total replies
         cursor.execute("SELECT COUNT(*) FROM replied_tweets")
-        total_replies = cursor.fetchone()[0]
-        
-        # Replies today
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0)
+        total = cursor.fetchone()[0]
+        # Fix datetime deprecation
+        now = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         cursor.execute("SELECT COUNT(*) FROM replied_tweets WHERE timestamp > ?", (today.isoformat(),))
-        replies_today = cursor.fetchone()[0]
-        
-        # Unique users
+        today_count = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(DISTINCT user_handle) FROM replied_tweets")
-        unique_users = cursor.fetchone()[0]
-        
-        # By language
+        unique = cursor.fetchone()[0]
         cursor.execute("SELECT language, COUNT(*) FROM replied_tweets GROUP BY language")
-        by_language = dict(cursor.fetchall())
-        
-    return {
-        "total_replies": total_replies,
-        "replies_today": replies_today,
-        "unique_users": unique_users,
-        "by_language": by_language
-    }
+        langs = dict(cursor.fetchall())
+    return {"total_replies": total, "replies_today": today_count, "unique_users": unique, "by_language": langs}
 
 # ============================================================================
 # FASTAPI APP
 # ============================================================================
 
-app = FastAPI(title="XBot Brain", version="1.0.0")
+app = FastAPI(title="XBot Brain", version="2.0.0")
 
-# CORS for browser access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -514,61 +617,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize
+# Initialize Components
 llm_client = LLMClient()
+smart_search = SmartSearch()
 init_database()
 
 @app.get("/")
 def root():
-    """Health check."""
-    return {"status": "online", "service": "XBot Brain v1.0"}
+    return {"status": "online", "service": "XBot Brain v2.0 (TMDB Enabled)"}
 
 @app.get("/schedule", response_model=ScheduleResponse)
 def get_schedule():
-    """Get current target region, language, and keywords."""
     schedule = get_current_schedule()
     trends = get_cached_trends(schedule["region"])
-    
     return ScheduleResponse(
         region=schedule["region"],
         location=schedule["location"],
         language=schedule["language"],
         lang_code=schedule["lang_code"],
-        keywords=schedule["keywords"],
-        current_trends=trends
+        current_trends=trends,
+        keywords=schedule["keywords"]
     )
+
+@app.get("/smart-search", response_model=SmartSearchResponse)
+def get_search_term():
+    """Get the next best high-intent search term."""
+    return smart_search.get_next_term()
 
 @app.post("/analyze", response_model=TweetAnalysisResponse)
 def analyze_tweet(request: TweetAnalysisRequest):
-    """Analyze a tweet and generate a reply if appropriate."""
-    
-    # De-duplication check
     is_duplicate, reason = check_duplicate(request.tweet_id, request.user_handle)
     if is_duplicate:
-        return TweetAnalysisResponse(
-            action="SKIP",
-            reason=reason,
-            draft=None,
-            language="",
-            trend_injected=None
-        )
+        return TweetAnalysisResponse(action="SKIP", reason=reason, draft=None, language="", trend_injected=None)
     
-    # Get current schedule
     schedule = get_current_schedule()
     trends = get_cached_trends(schedule["region"])
     
-    # LLM analysis
     result = llm_client.analyze_and_draft(
         tweet_text=request.tweet_text,
         lang_code=schedule["lang_code"],
         region=schedule["region"],
         trends=trends,
+        movie_title=request.movie_title, # Pass context
+        movie_year=request.movie_year,   # Pass context
         parent_text=request.parent_text
     )
     
-    # Log the scan
     if result["action"] == "SKIP":
-        log_scanned(request.tweet_id, result["reason"])
+        log_scanned(request.tweet_id, result.get("reason", "Skipped by LLM"))
     
     return TweetAnalysisResponse(
         action=result["action"],
@@ -585,7 +681,6 @@ class LogReplyRequest(BaseModel):
 
 @app.post("/log-reply")
 def log_successful_reply(request: LogReplyRequest):
-    """Log a successfully posted reply."""
     schedule = get_current_schedule()
     log_reply(
         tweet_id=request.tweet_id,
@@ -598,31 +693,19 @@ def log_successful_reply(request: LogReplyRequest):
 
 @app.post("/update-trends")
 def update_trends(request: TrendUpdateRequest):
-    """Update trend cache for a region."""
     update_trend_cache(request.region, request.trends)
     return {"status": "updated", "region": request.region, "trends_count": len(request.trends)}
 
 @app.get("/stats")
-def get_statistics():
-    """Get bot statistics."""
+def get_statistics_endpoint():
     return get_stats()
 
 @app.get("/check-health")
 def check_health():
-    """Check if bot should continue or pause (Sentinel)."""
     stats = get_stats()
-    
-    # Basic health checks
     warnings = []
-    
-    if stats["replies_today"] >= 150:
-        warnings.append("Daily limit approaching (150)")
-    
-    return {
-        "status": "HEALTHY" if not warnings else "WARNING",
-        "warnings": warnings,
-        "stats": stats
-    }
+    if stats["replies_today"] >= 150: warnings.append("Daily limit approaching")
+    return {"status": "HEALTHY" if not warnings else "WARNING", "warnings": warnings, "stats": stats}
 
 class LocationSelectRequest(BaseModel):
     target_location: str
@@ -630,55 +713,28 @@ class LocationSelectRequest(BaseModel):
 
 @app.post("/select-location")
 def select_location(request: LocationSelectRequest):
-    """Given a list of location options, return which index to click."""
     target = request.target_location.lower()
     target_parts = target.replace(',', ' ').split()
-    
     best_match = -1
     best_score = 0
     
     for i, option in enumerate(request.options):
         option_lower = option.lower()
         score = 0
-        
-        # Exact match
-        if target in option_lower:
-            score += 10
-        
-        # Check each part of target
+        if target in option_lower: score += 10
         for part in target_parts:
-            if part in option_lower:
-                score += 2
-        
-        # Prefer shorter matches (more specific)
-        if score > 0:
-            score += max(0, 10 - len(option) // 5)
-        
+            if part in option_lower: score += 2
+        if score > 0: score += max(0, 10 - len(option) // 5)
         if score > best_score:
             best_score = score
             best_match = i
-    
+            
     if best_match >= 0:
-        return {
-            "index": best_match,
-            "selected": request.options[best_match],
-            "confidence": best_score
-        }
+        return {"index": best_match, "selected": request.options[best_match], "confidence": best_score}
     else:
-        return {
-            "index": 0,  # Default to first option
-            "selected": request.options[0] if request.options else None,
-            "confidence": 0
-        }
-
-
-# ============================================================================
-# MAIN
-# ============================================================================
+        return {"index": 0, "selected": request.options[0] if request.options else None, "confidence": 0}
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting XBot Brain Server...")
-    print(f"Database: {DATABASE_PATH}")
-    print(f"Groq API Key: {'SET' if GROQ_API_KEY else 'NOT SET'}")
+    print("Starting XBot Brain Server v2.0 (TMDB Enabled)...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XBot v6.2 (Complete Autonomous 24/7)
+// @name         XBot v6.3 (Complete Autonomous 24/7)
 // @namespace    http://tampermonkey.net/
-// @version      6.2
-// @description  X.com Bot - Strict Location Filtering
+// @version      6.3
+// @description  X.com Bot - TMDB Smart Search
 // @author       XBot
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -55,6 +55,12 @@
     // PHASES & STEPS
     // ========================================================================
 
+    const FALLBACK_KEYWORDS = [
+        '"where to watch" free',
+        '"best free streaming" site',
+        '"streaming site" no ads'
+    ];
+
     const PHASES = {
         IDLE: 'IDLE',
         SWITCHING_LOCATION: 'SWITCHING',
@@ -95,7 +101,15 @@
         hourStartTime: Date.now(),
         processedTweets: new Set(),
         consecutiveErrors: 0,
-        locationSwitchStep: LOCATION_STEPS.NAVIGATE
+        locationSwitchStep: LOCATION_STEPS.NAVIGATE,
+        currentSearchTerm: '',
+        currentMovieTitle: null,
+        currentMovieYear: null,
+        currentTMDBId: null,
+        currentSearchTerm: '',
+        currentMovieTitle: null,
+        currentMovieYear: null,
+        currentTMDBId: null,
     };
 
     // ========================================================================
@@ -159,16 +173,23 @@
             repliesToday: STATE.repliesToday,
             lastReplyTime: STATE.lastReplyTime,
             hourStartTime: STATE.hourStartTime,
+
+            // Smart Search Persistence
+            currentSearchTerm: STATE.currentSearchTerm,
+            currentMovieTitle: STATE.currentMovieTitle,
+            currentMovieYear: STATE.currentMovieYear,
+            currentTMDBId: STATE.currentTMDBId,
+
             processedTweets: Array.from(STATE.processedTweets).slice(-200),
             locationSwitchStep: STATE.locationSwitchStep,
             timestamp: Date.now()
         };
-        GM_setValue('xbot_state_v62', JSON.stringify(data));
+        GM_setValue('xbot_state_v63', JSON.stringify(data));
     }
 
     function loadState() {
         try {
-            const saved = GM_getValue('xbot_state_v62', null);
+            const saved = GM_getValue('xbot_state_v63', null);
             if (!saved) return false;
 
             const data = JSON.parse(saved);
@@ -185,6 +206,13 @@
             STATE.lastLocationSwitchRegion = data.lastLocationSwitchRegion;
             STATE.lastKeywordRotation = data.lastKeywordRotation || Date.now();
             STATE.lastTrendHarvest = data.lastTrendHarvest || 0;
+
+            // Load Smart Search Data
+            if (data.currentSearchTerm) STATE.currentSearchTerm = data.currentSearchTerm;
+            if (data.currentMovieTitle) STATE.currentMovieTitle = data.currentMovieTitle;
+            if (data.currentMovieYear) STATE.currentMovieYear = data.currentMovieYear;
+            if (data.currentTMDBId) STATE.currentTMDBId = data.currentTMDBId;
+
             STATE.processedTweets = new Set(data.processedTweets || []);
             STATE.locationSwitchStep = data.locationSwitchStep || LOCATION_STEPS.NAVIGATE;
 
@@ -509,17 +537,66 @@
 
     async function handleSearch() {
         if (getCurrentPage() !== 'SEARCH') {
-            const keyword = STATE.currentKeywords[STATE.currentKeywordIndex % STATE.currentKeywords.length];
-            log('Navigating to search for:', keyword);
+            // New: Fetch Smart Search Term from Brain
+            log('Fetching Smart Search Term...');
+            try {
+                const searchData = await callBrain('/smart-search');
+                if (searchData && searchData.search_term) {
+                    STATE.currentSearchTerm = searchData.search_term;
+                    STATE.currentMovieTitle = searchData.title;
+                    STATE.currentMovieYear = searchData.year;
+                    STATE.currentTMDBId = searchData.tmdb_id;
+
+                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title})`);
+                    saveState();
+
+                    window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
+                    return 'NAVIGATING';
+                }
+            } catch (e) {
+                log('Error fetching smart search term:', e);
+            }
+
+            // Fallback to old rotation if smart search fails
+            let keywordList = STATE.currentKeywords;
+            if (!keywordList || keywordList.length === 0) {
+                log('Warning: No keywords in state, using hardcoded fallback.');
+                keywordList = FALLBACK_KEYWORDS;
+            }
+
+            const keyword = keywordList[STATE.currentKeywordIndex % keywordList.length];
+            log('Fallback: Navigating to search for:', keyword);
             saveState();
             window.location.href = `https://x.com/search?q=${encodeURIComponent(keyword)}&src=typed_query&f=live`;
             return 'NAVIGATING';
         }
 
+        // If we are already on search page, check if we need to rotate
         if (Date.now() - STATE.lastKeywordRotation > CONFIG.KEYWORD_ROTATE_INTERVAL) {
+            // New: Fetch Smart Search Term from Brain
+            log('Rotating Search Term (Smart Search)...');
+            try {
+                const searchData = await callBrain('/smart-search');
+                if (searchData && searchData.search_term) {
+                    STATE.currentSearchTerm = searchData.search_term;
+                    STATE.currentMovieTitle = searchData.title;
+                    STATE.currentMovieYear = searchData.year;
+                    STATE.currentTMDBId = searchData.tmdb_id;
+                    STATE.lastKeywordRotation = Date.now();
+
+                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title})`);
+                    saveState();
+
+                    window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
+                    return 'NAVIGATING';
+                }
+            } catch (e) {
+                log('Error rotating smart search term:', e);
+            }
+
             STATE.currentKeywordIndex++;
             STATE.lastKeywordRotation = Date.now();
-            log('Rotating keyword...');
+            log('Rotating keyword (Fallback)...');
             saveState();
             window.location.reload();
             return 'RELOADING';
@@ -558,7 +635,9 @@
         const analysis = await analyzeTweet({
             tweet_id: target.tweet_id,
             tweet_text: target.tweet_text,
-            user_handle: target.user_handle
+            user_handle: target.user_handle,
+            movie_title: STATE.currentMovieTitle, // Pass context
+            movie_year: STATE.currentMovieYear    // Pass context
         });
 
         if (analysis.action !== 'REPLY' || !analysis.draft) return 'SKIP';
@@ -652,21 +731,21 @@
 
     function createUI() {
         const p = document.createElement('div');
-        p.id = 'xbot-v62';
+        p.id = 'xbot-v63';
         p.innerHTML = `
             <style>
-                #xbot-v62 {
+                #xbot-v63 {
                     position: fixed; bottom: 20px; right: 20px;
                     background: #15202b; border: 1px solid #38444d; border-radius: 12px;
                     padding: 12px; z-index: 9999; color: white; font-family: sans-serif; min-width: 200px;
                 }
-                #xbot-v62 h4 { margin: 0 0 8px 0; color: #1da1f2; }
-                #xbot-v62 div { font-size: 11px; margin: 4px 0; }
-                #xbot-v62 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
-                #xbot-v62 .start { background: #1da1f2; color: white; }
-                #xbot-v62 .stop { background: #e0245e; color: white; }
+                #xbot-v63 h4 { margin: 0 0 8px 0; color: #1da1f2; }
+                #xbot-v63 div { font-size: 11px; margin: 4px 0; }
+                #xbot-v63 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+                #xbot-v63 .start { background: #1da1f2; color: white; }
+                #xbot-v63 .stop { background: #e0245e; color: white; }
             </style>
-            <h4>🤖 XBot v6.2</h4>
+            <h4>🤖 XBot v6.3</h4>
             <div id="ui-status">Status: Stopped</div>
             <div id="ui-region">Region: --</div>
             <div id="ui-phase">Phase: --</div>
