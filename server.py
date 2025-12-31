@@ -275,21 +275,46 @@ class SmartSearch:
         with get_db() as conn:
             cursor = conn.cursor()
             
-            # Process Movies
+            # Process Movies - EXPANDED CATEGORIES
             for m in movies:
                 title = m.get("title")
                 year = m.get("release_date", "")[:4]
                 if not title: continue
                 
-                queries = [
+                # Category 1: Direct Intent (High conversion)
+                direct_intent = [
                     f'"{title}" watch free',
                     f'"{title}" streaming',
                     f'where to watch "{title}"',
                     f'"{title}" online free',
-                    f'"{title}" {year} stream'
+                    f'"{title}" {year} stream',
+                    f'"{title}" full movie',
                 ]
                 
-                for q in queries:
+                # Category 2: Movie Discussion (High volume)
+                discussion = [
+                    f'just watched {title}',
+                    f'{title} was amazing',
+                    f'{title} movie',
+                    f'watching {title}',
+                ]
+                
+                # Category 3: Frustration (High intent)
+                frustration = [
+                    f"can't find {title}",
+                    f'{title} not on netflix',
+                    f'{title} removed',
+                ]
+                
+                # Category 4: Recommendations
+                recommendations = [
+                    f'{title} recommend',
+                    f'should I watch {title}',
+                ]
+                
+                all_queries = direct_intent + discussion + frustration + recommendations
+                
+                for q in all_queries:
                     try:
                         cursor.execute("""
                             INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
@@ -299,21 +324,40 @@ class SmartSearch:
                     except sqlite3.IntegrityError:
                         pass # Already exists
             
-            # Process TV Shows
+            # Process TV Shows - EXPANDED CATEGORIES
             for t in tv_shows:
                 name = t.get("name")
                 year = t.get("first_air_date", "")[:4]
                 if not name: continue
                 
-                queries = [
+                # Category 1: Direct Intent
+                direct_intent = [
                     f'"{name}" watch free',
                     f'"{name}" streaming',
                     f'where to watch "{name}"',
                     f'"{name}" free episodes',
-                    f'"{name}" online free'
+                    f'"{name}" online free',
+                    f'"{name}" all seasons',
                 ]
                 
-                for q in queries:
+                # Category 2: Discussion
+                discussion = [
+                    f'binging {name}',
+                    f'{name} is so good',
+                    f'{name} season',
+                    f'watching {name}',
+                ]
+                
+                # Category 3: Frustration
+                frustration = [
+                    f"can't find {name}",
+                    f'{name} removed',
+                    f'{name} not available',
+                ]
+                
+                all_queries = direct_intent + discussion + frustration
+                
+                for q in all_queries:
                     try:
                         cursor.execute("""
                             INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
@@ -323,9 +367,32 @@ class SmartSearch:
                     except sqlite3.IntegrityError:
                         pass
             
+            # Category 5: Generic High-Volume (Not content-specific)
+            generic_terms = [
+                ("free movies online", 0, "generic", "Free Movies", "", 50),
+                ("free streaming site", 0, "generic", "Free Streaming", "", 50),
+                ("watch movies free", 0, "generic", "Free Movies", "", 50),
+                ("no ads streaming", 0, "generic", "No Ads", "", 50),
+                ("movie recommendations", 0, "generic", "Recommendations", "", 40),
+                ("what to watch tonight", 0, "generic", "What to Watch", "", 40),
+                ("best free streaming", 0, "generic", "Best Free", "", 45),
+                ("streaming without ads", 0, "generic", "No Ads", "", 45),
+                ("where to watch movies free", 0, "generic", "Watch Free", "", 50),
+            ]
+            
+            for term, tmdb_id, content_type, title, year, popularity in generic_terms:
+                try:
+                    cursor.execute("""
+                        INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (term, tmdb_id, content_type, title, year, popularity))
+                    new_terms += 1
+                except sqlite3.IntegrityError:
+                    pass
+            
             conn.commit()
         
-        print(f"Generated {new_terms} new high-intent search terms.")
+        print(f"Generated {new_terms} new high-intent search terms (10x expanded categories).")
 
     def get_next_term(self) -> Dict[str, Any]:
         """Get the best unused search term."""
@@ -443,40 +510,47 @@ class LLMClient:
             }
         
         lang_name = LANG_NAMES.get(lang_code, "English")
-        trends_str = ", ".join(trends[:5]) if trends else "None"
+        trends_str = ", ".join(trends[:5]) if trends else "#Movies, #Streaming, #WatchOnline"
         
         # Contextual Prompt
         context_block = ""
         if movie_title:
             context_block = f"""
-=== CONTEXT ===
-This search was targeting: "{movie_title}" ({movie_year})
-The user matched the search term, but verify they are actually talking about THIS movie/show.
+CONTEXT: User searched for "{movie_title}" ({movie_year}). Verify tweet is about this content.
 """
 
-        system_prompt = f"""You are a NATIVE {lang_name} speaker and movie enthusiast on X (Twitter).
-You are located in {region}. You speak ONLY {lang_name}.
+        system_prompt = f"""You are a genuine movie fan on X (Twitter) who discovered an amazing streaming site.
+You speak {lang_name} natively. You're helpful, casual, and sound like a real person - NOT a marketer.
+
 {context_block}
 
-=== CRITICAL RULES ===
+=== ABSOLUTE RULES (VIOLATING ANY = FAILURE) ===
 
-RULE 1 - LANGUAGE: Your ENTIRE reply MUST be in {lang_name}.
-RULE 2 - TREND INJECTION: You MUST include a hashtag from: {trends_str}
-RULE 3 - INTENT VERIFICATION:
-- IF context provided: CONFIRM tweet is about "{movie_title}".
-- User must be looking for where to watch/stream it.
-- SKIP if: asking for reviews, discussing plot, or already found a link.
-- SKIP if: talking about something completely different.
+RULE 1 - CHARACTER LIMIT: Your reply MUST be under 200 characters total. Twitter has limits.
 
-RULE 4 - NATURAL TONE: Casual, short, helpful.
-RULE 5 - PROMOTION: You MUST casually recommend "streamixapp.pages.dev" as the solution.
-   - Example: "Found it on streamixapp.pages.dev, no ads there."
-   - Example: "Just watch on streamixapp.pages.dev"
-   - Do NOT be overly salesy. Just helpful.
+RULE 2 - MANDATORY SITE: You MUST include "streamixapp.pages.dev" in EVERY reply.
+   This is the ONLY site you recommend. Period.
 
-=== OUTPUT FORMAT ===
-JSON only:
-{{"action": "REPLY" or "SKIP", "reason": "why", "draft": "reply text", "trend": "used hashtag"}}
+RULE 3 - BANNED WORDS: NEVER mention these competitors:
+   Netflix, Hulu, Amazon, Disney+, HBO, Sflix, Fmovies, 123movies, Soap2day, or ANY other streaming site.
+   If the tweet mentions these, just say our site is better without naming them.
+
+RULE 4 - TRENDING HASHTAG: Include ONE hashtag from: {trends_str}
+
+RULE 5 - AUTHENTIC VOICE: Sound like these real examples:
+   - "yo check streamixapp.pages.dev for that, no ads fr 🔥 #Movies"
+   - "been using streamixapp.pages.dev lately, way cleaner #Streaming"
+   - "streamixapp.pages.dev has it, zero popups 💯 #WatchOnline"
+   - "found it on streamixapp.pages.dev ngl pretty solid #Cinema"
+
+RULE 6 - REPLY OR SKIP:
+   REPLY if: User is looking for where to watch, asking for recommendations, frustrated about finding content
+   SKIP if: Just discussing plot, reviewing, already has a solution, is a bot/brand, off-topic
+
+RULE 7 - LANGUAGE: Reply in {lang_name} only.
+
+=== OUTPUT (JSON ONLY, NO MARKDOWN) ===
+{{"action": "REPLY" or "SKIP", "reason": "brief why", "draft": "your reply under 200 chars", "trend": "#UsedHashtag"}}
 """
 
         user_message = f"Tweet: {tweet_text}"

@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XBot v6.3 (Complete Autonomous 24/7)
+// @name         XBot v7.0 (1M Daily Reach Engine)
 // @namespace    http://tampermonkey.net/
-// @version      6.3
-// @description  X.com Bot - TMDB Smart Search
+// @version      7.0
+// @description  X.com Bot - Enhanced Targeting & Real Trends
 // @author       XBot
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -184,12 +184,12 @@
             locationSwitchStep: STATE.locationSwitchStep,
             timestamp: Date.now()
         };
-        GM_setValue('xbot_state_v63', JSON.stringify(data));
+        GM_setValue('xbot_state_v70', JSON.stringify(data));
     }
 
     function loadState() {
         try {
-            const saved = GM_getValue('xbot_state_v63', null);
+            const saved = GM_getValue('xbot_state_v70', null);
             if (!saved) return false;
 
             const data = JSON.parse(saved);
@@ -503,32 +503,81 @@
 
         await sleep(3000);
 
-        const trendElements = document.querySelectorAll('[data-testid="trend"]');
+        // Enhanced trend extraction - multiple selectors for robustness
         const trends = [];
 
+        // Method 1: Try [data-testid="trend"]
+        const trendElements = document.querySelectorAll('[data-testid="trend"]');
         trendElements.forEach(el => {
             const lines = el.innerText.split('\n');
             for (const line of lines) {
                 const t = line.trim();
+                // Skip metadata lines
                 if (/^\d/.test(t) || t.includes('·') || t.toLowerCase().includes('trending')) continue;
                 if (t.length < 2 || t.length > 50) continue;
+                if (t.toLowerCase().includes('post') || t.toLowerCase().includes('show more')) continue;
 
-                if (t.startsWith('#')) trends.push(t);
-                else if (t.length > 2 && !t.includes(' ')) trends.push('#' + t);
+                // Add hashtags directly
+                if (t.startsWith('#')) {
+                    trends.push(t);
+                }
+                // Convert trending topics to hashtags (no spaces = topic name)
+                else if (t.length > 2 && !t.includes(' ') && /^[A-Za-z]/.test(t)) {
+                    trends.push('#' + t);
+                }
+                // Multi-word trends - convert to camelCase hashtag
+                else if (t.length > 3 && t.includes(' ') && t.split(' ').length <= 3) {
+                    const words = t.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+                    trends.push('#' + words.join(''));
+                }
             }
         });
 
-        const unique = [...new Set(trends)].slice(0, 5);
+        // Method 2: Try trending topic spans directly
+        const topicSpans = document.querySelectorAll('[dir="ltr"] > span');
+        topicSpans.forEach(span => {
+            const t = span.textContent.trim();
+            if (t.startsWith('#') && t.length > 2 && t.length < 50) {
+                trends.push(t);
+            }
+        });
+
+        // Method 3: Try to find any hashtag-like text on the page
+        const allText = document.body.innerText;
+        const hashtagMatches = allText.match(/#[A-Za-z][A-Za-z0-9_]{1,29}/g) || [];
+        hashtagMatches.forEach(tag => {
+            if (tag.length > 2 && !tag.toLowerCase().includes('xbot')) {
+                trends.push(tag);
+            }
+        });
+
+        // Deduplicate and filter
+        const unique = [...new Set(trends)]
+            .filter(t => !INDIA_KEYWORDS.some(kw => t.toLowerCase().includes(kw)))
+            .slice(0, 10);
+
         if (unique.length > 0) {
             STATE.currentTrends = unique;
             STATE.lastTrendHarvest = Date.now();
-            await sendTrendsToBrain(STATE.currentRegion, unique);
-            log('Harvested:', unique);
+
+            // Send to Brain
+            try {
+                await sendTrendsToBrain(STATE.currentRegion, unique);
+                log('✅ Harvested & Sent to Brain:', unique);
+            } catch (e) {
+                log('Failed to send trends to brain:', e);
+            }
+
             saveState();
             return 'SUCCESS';
         }
 
-        return 'NO_TRENDS';
+        // Fallback if no trends found
+        log('⚠️ No trends found, using fallbacks');
+        STATE.currentTrends = ['#Movies', '#Streaming', '#WatchOnline', '#Cinema', '#Film'];
+        STATE.lastTrendHarvest = Date.now();
+        saveState();
+        return 'FALLBACK';
     }
 
     // ========================================================================
@@ -731,21 +780,21 @@
 
     function createUI() {
         const p = document.createElement('div');
-        p.id = 'xbot-v63';
+        p.id = 'xbot-v70';
         p.innerHTML = `
             <style>
-                #xbot-v63 {
+                #xbot-v70 {
                     position: fixed; bottom: 20px; right: 20px;
                     background: #15202b; border: 1px solid #38444d; border-radius: 12px;
                     padding: 12px; z-index: 9999; color: white; font-family: sans-serif; min-width: 200px;
                 }
-                #xbot-v63 h4 { margin: 0 0 8px 0; color: #1da1f2; }
-                #xbot-v63 div { font-size: 11px; margin: 4px 0; }
-                #xbot-v63 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
-                #xbot-v63 .start { background: #1da1f2; color: white; }
-                #xbot-v63 .stop { background: #e0245e; color: white; }
+                #xbot-v70 h4 { margin: 0 0 8px 0; color: #1da1f2; }
+                #xbot-v70 div { font-size: 11px; margin: 4px 0; }
+                #xbot-v70 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+                #xbot-v70 .start { background: #1da1f2; color: white; }
+                #xbot-v70 .stop { background: #e0245e; color: white; }
             </style>
-            <h4>🤖 XBot v6.3</h4>
+            <h4>🚀 XBot v7.0</h4>
             <div id="ui-status">Status: Stopped</div>
             <div id="ui-region">Region: --</div>
             <div id="ui-phase">Phase: --</div>
