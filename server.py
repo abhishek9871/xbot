@@ -452,6 +452,7 @@ class TweetAnalysisRequest(BaseModel):
     # Context from Smart Search
     movie_title: Optional[str] = None
     movie_year: Optional[str] = None
+    search_lang: Optional[str] = None  # Language code from search (e.g., 'ko', 'ja')
 
 class TweetAnalysisResponse(BaseModel):
     action: str  # "REPLY" or "SKIP"
@@ -478,6 +479,7 @@ class SmartSearchResponse(BaseModel):
     year: str
     tmdb_id: int
     content_type: str
+    lang_code: str  # Language code for the search (e.g., 'ko', 'ja', 'en')
 
 # ============================================================================
 # GROQ LLM CLIENT
@@ -715,8 +717,24 @@ def get_schedule():
 
 @app.get("/smart-search", response_model=SmartSearchResponse)
 def get_search_term():
-    """Get the next best high-intent search term."""
-    return smart_search.get_next_term()
+    """Get the next best high-intent search term with language filter."""
+    schedule = get_current_schedule()
+    lang_code = schedule["lang_code"]
+    
+    term_data = smart_search.get_next_term()
+    
+    # Append lang:xx filter to ensure we get tweets in target language
+    original_term = term_data["search_term"]
+    localized_term = f"{original_term} lang:{lang_code}"
+    
+    return SmartSearchResponse(
+        search_term=localized_term,
+        title=term_data["title"],
+        year=term_data["year"],
+        tmdb_id=term_data["tmdb_id"],
+        content_type=term_data["content_type"],
+        lang_code=lang_code
+    )
 
 @app.post("/analyze", response_model=TweetAnalysisResponse)
 def analyze_tweet(request: TweetAnalysisRequest):
@@ -727,13 +745,16 @@ def analyze_tweet(request: TweetAnalysisRequest):
     schedule = get_current_schedule()
     trends = get_cached_trends(schedule["region"])
     
+    # Use search_lang if provided (from smart search), else fall back to schedule
+    reply_lang = request.search_lang if request.search_lang else schedule["lang_code"]
+    
     result = llm_client.analyze_and_draft(
         tweet_text=request.tweet_text,
-        lang_code=schedule["lang_code"],
+        lang_code=reply_lang,  # Use the search language for the reply
         region=schedule["region"],
         trends=trends,
-        movie_title=request.movie_title, # Pass context
-        movie_year=request.movie_year,   # Pass context
+        movie_title=request.movie_title,
+        movie_year=request.movie_year,
         parent_text=request.parent_text
     )
     

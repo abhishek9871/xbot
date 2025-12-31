@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XBot v7.0 (1M Daily Reach Engine)
+// @name         XBot v7.1 (Language-Aware Targeting)
 // @namespace    http://tampermonkey.net/
-// @version      7.0
-// @description  X.com Bot - Enhanced Targeting & Real Trends
+// @version      7.1
+// @description  X.com Bot - Fixed lang: search filter & trend harvesting
 // @author       XBot
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -102,14 +102,12 @@
         processedTweets: new Set(),
         consecutiveErrors: 0,
         locationSwitchStep: LOCATION_STEPS.NAVIGATE,
+        // Smart Search State
         currentSearchTerm: '',
         currentMovieTitle: null,
         currentMovieYear: null,
         currentTMDBId: null,
-        currentSearchTerm: '',
-        currentMovieTitle: null,
-        currentMovieYear: null,
-        currentTMDBId: null,
+        currentSearchLang: 'en', // Language code from smart search (e.g., 'ko', 'ja')
     };
 
     // ========================================================================
@@ -184,12 +182,12 @@
             locationSwitchStep: STATE.locationSwitchStep,
             timestamp: Date.now()
         };
-        GM_setValue('xbot_state_v70', JSON.stringify(data));
+        GM_setValue('xbot_state_v71', JSON.stringify(data));
     }
 
     function loadState() {
         try {
-            const saved = GM_getValue('xbot_state_v70', null);
+            const saved = GM_getValue('xbot_state_v71', null);
             if (!saved) return false;
 
             const data = JSON.parse(saved);
@@ -595,8 +593,9 @@
                     STATE.currentMovieTitle = searchData.title;
                     STATE.currentMovieYear = searchData.year;
                     STATE.currentTMDBId = searchData.tmdb_id;
+                    STATE.currentSearchLang = searchData.lang_code || 'en'; // Store language for reply
 
-                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title})`);
+                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title}, Lang: ${searchData.lang_code})`);
                     saveState();
 
                     window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
@@ -685,8 +684,9 @@
             tweet_id: target.tweet_id,
             tweet_text: target.tweet_text,
             user_handle: target.user_handle,
-            movie_title: STATE.currentMovieTitle, // Pass context
-            movie_year: STATE.currentMovieYear    // Pass context
+            movie_title: STATE.currentMovieTitle,
+            movie_year: STATE.currentMovieYear,
+            search_lang: STATE.currentSearchLang // Pass language for reply
         });
 
         if (analysis.action !== 'REPLY' || !analysis.draft) return 'SKIP';
@@ -744,7 +744,12 @@
                 }
                 if (r === 'SUCCESS') {
                     // Location clicked! Now navigate to trending page
-                    log('Location switch successful! Navigating to trending page...');
+                    log('Location switch successful! Clearing old trends and navigating to trending page...');
+
+                    // CRITICAL: Clear old trends to force fresh harvest for new region
+                    STATE.currentTrends = [];
+                    STATE.lastTrendHarvest = 0; // Force immediate harvest
+
                     saveState();
                     // Wait a moment for X.com to process the location change
                     await sleep(2000);
@@ -780,21 +785,21 @@
 
     function createUI() {
         const p = document.createElement('div');
-        p.id = 'xbot-v70';
+        p.id = 'xbot-v71';
         p.innerHTML = `
             <style>
-                #xbot-v70 {
+                #xbot-v71 {
                     position: fixed; bottom: 20px; right: 20px;
                     background: #15202b; border: 1px solid #38444d; border-radius: 12px;
                     padding: 12px; z-index: 9999; color: white; font-family: sans-serif; min-width: 200px;
                 }
-                #xbot-v70 h4 { margin: 0 0 8px 0; color: #1da1f2; }
-                #xbot-v70 div { font-size: 11px; margin: 4px 0; }
-                #xbot-v70 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
-                #xbot-v70 .start { background: #1da1f2; color: white; }
-                #xbot-v70 .stop { background: #e0245e; color: white; }
+                #xbot-v71 h4 { margin: 0 0 8px 0; color: #1da1f2; }
+                #xbot-v71 div { font-size: 11px; margin: 4px 0; }
+                #xbot-v71 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+                #xbot-v71 .start { background: #1da1f2; color: white; }
+                #xbot-v71 .stop { background: #e0245e; color: white; }
             </style>
-            <h4>🚀 XBot v7.0</h4>
+            <h4>🚀 XBot v7.1</h4>
             <div id="ui-status">Status: Stopped</div>
             <div id="ui-region">Region: --</div>
             <div id="ui-phase">Phase: --</div>
