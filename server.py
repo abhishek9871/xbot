@@ -1178,6 +1178,8 @@ Reply: "Eternal Sunshine honestly hit different. the way it explores memory and 
 === OUTPUT (STRICT JSON) ===
 Movie/TV: {{"action": "REPLY", "reason": "2-5 words", "draft": "your persuasive 280-char reply"}}
 Skip: {{"action": "SKIP", "reason": "why skipping", "draft": null}}
+
+IMPORTANT: URL MUST BE LOWERCASE: streamixapp.pages.dev
 """
 
 
@@ -1210,13 +1212,35 @@ Skip: {{"action": "SKIP", "reason": "why skipping", "draft": null}}
                     # Remove the thinking block to get pure JSON
                     result_text = re.sub(r'<think>.*?</think>', '', result_text, flags=re.DOTALL).strip()
 
-            # Clean up markdown if present
-            if result_text.startswith("```"):
-                result_text = result_text.split("```")[1]
-                if result_text.strip().startswith("json"):
-                    result_text = result_text.strip()[4:]
+            # Clean up markdown if present (more robustly)
+            import re
+            
+            # 1. Remove code blocks
+            code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+            if code_block_match:
+                result_text = code_block_match.group(1)
+            else:
+                # 2. Fallback: Find first { and last }
+                json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+                if json_match:
+                    result_text = json_match.group(0)
             
             result = json.loads(result_text)
+            
+            # POST-PROCESSING: Fix formatting issues
+            if result.get("draft"):
+                draft = result["draft"]
+                
+                # 1. Force lowercase URL
+                draft = draft.replace("Streamixapp.pages.dev", "streamixapp.pages.dev")
+                draft = draft.replace("STREAMIXAPP.PAGES.DEV", "streamixapp.pages.dev")
+                
+                # 2. Fix missing space before hyphen (e.g., "dev-4K" -> "dev - 4K")
+                # This catches "streamixapp.pages.dev-4K" or "dev-free"
+                draft = re.sub(r'(streamixapp\.pages\.dev)-([a-zA-Z0-9])', r'\1 - \2', draft)
+                
+                result["draft"] = draft
+
             result["sentiment"] = sentiment
             return result
             

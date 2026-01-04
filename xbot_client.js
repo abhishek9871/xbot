@@ -33,7 +33,7 @@
         MAX_REPLIES_PER_SCAN: 100,      // Process ALL candidates
         MAX_REPLIES_PER_DAY: 500,       // High daily limit
         MIN_IMPRESSIONS: 2000,          // v9.0: Only target posts with 2K+ impressions
-        DRY_RUN: true,
+        DRY_RUN: false,                 // v9.2: LIVE POSTING ENABLED
         DEBUG: true
     };
 
@@ -433,6 +433,81 @@
 
         // Ambiguous - skip (let next loop find better candidates)
         return false;
+    }
+
+    // v9.2: Helper for human-like typing simulation
+    async function typeHumanLike(element, text) {
+        log(`Typing "${text}"...`);
+        for (let char of text) {
+            // Dispatch keydown
+            element.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+
+            // Insert text (simulates input)
+            document.execCommand('insertText', false, char);
+
+            // Dispatch input/change events to trigger X's internal state
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Random usage-based delay (30ms - 150ms)
+            await sleep(randomBetween(30, 150));
+
+            // Occasional longer pause (thinking)
+            if (Math.random() < 0.05) await sleep(randomBetween(300, 800));
+        }
+    }
+
+    // v9.2: Live Posting Implementation
+    async function postReply(tweetEl, text) {
+        log('Starting reply sequence...');
+
+        // 1. Click Reply
+        const replyBtn = tweetEl.querySelector('[data-testid="reply"]');
+        if (!replyBtn) throw new Error("Reply button not found");
+
+        replyBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await sleep(randomBetween(500, 1000));
+        replyBtn.click();
+        log('Clicked reply button');
+
+        // Random wait for modal/inline to appear
+        await sleep(randomBetween(1500, 3000));
+
+        // 2. Find Editor (wait for it to appear)
+        // Note: It's the same testid for both modal and inline
+        const editorSelector = '[data-testid="tweetTextarea_0"]';
+        const editor = await waitForSelector(editorSelector, 5000);
+
+        if (!editor) {
+            throw new Error("Editor not found");
+        }
+
+        // 3. Human Typing
+        log('Focusing editor...');
+        editor.focus();
+        await sleep(randomBetween(500, 1000));
+        await typeHumanLike(editor, text);
+
+        // 4. Click Post
+        // Check for both modal button and inline button
+        await sleep(randomBetween(2000, 4000)); // Think before posting
+
+        const postBtn = document.querySelector('[data-testid="tweetButton"]') ||
+            document.querySelector('[data-testid="tweetButtonInline"]');
+
+        if (postBtn) {
+            log('Clicking Post button...');
+            postBtn.click();
+        } else {
+            throw new Error("Post button not found");
+        }
+
+        // 5. Wait for success/toast and cleanup
+        await sleep(randomBetween(3000, 5000));
+
+        // Close modal if it's still open (sometimes X doesn't close on error)
+        // But usually successful post closes it. 
+        // We can check for the close button just in case, but let's trust the flow for now.
     }
 
     // ========================================================================
@@ -972,14 +1047,38 @@
             log('╚══════════════════════════════════════════════════════════════════╝');
             log('');
 
+            if (!CONFIG.DRY_RUN) {
+                try {
+                    await postReply(tw, analysis.draft);
+
+                    // Log success to Brain
+                    await callBrain('/log-reply', 'POST', {
+                        tweet_id: data.tweet_id,
+                        user_handle: data.user_handle,
+                        reply_text: analysis.draft,
+                        search_term: STATE.currentSearchTerm || 'unknown',
+                        sentiment: analysis.sentiment
+                    });
+
+                    log('✅ Live Reply Posted Successfully!');
+                } catch (e) {
+                    log('❌ Failed to post reply:', e);
+                    continue; // specific failure, move to next
+                }
+            } else {
+                log('🚫 DRY RUN: Reply NOT posted.');
+            }
+
             STATE.lastReplyTime = Date.now();
             STATE.repliesThisHour++;
             STATE.repliesToday = incrementDailyCount(); // v9.0: Persistent counter
             STATE.estimatedReach += data.impressions * 0.05; // Estimate 5% of impressions as reach
             repliesThisScan++;
 
-            // Delay between posts (human-like pacing)
-            await sleep(randomBetween(3000, 6000));
+            // v9.2: MANDATORY 1-MINUTE COOLDOWN check
+            // Random between 60s and 90s to stay safe and strict
+            log('⏳ Cooling down for 60-90 seconds...');
+            await sleep(randomBetween(60000, 90000));
         }
 
         // EXHAUSTION DETECTION
