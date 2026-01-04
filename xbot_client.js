@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XBot v9.0 (Movie Lover Honeypot Engine)
+// @name         XBot v9.2 (Movie Lover Honeypot Engine)
 // @namespace    http://tampermonkey.net/
-// @version      9.0
-// @description  X.com Bot - List-based targeting with confident social-proof replies
+// @version      9.2
+// @description  X.com Bot - Exact-match blocking, video game exclusion, expanded India filter
 // @author       XBot
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -41,16 +41,75 @@
     // BLOCKED CONTENT
     // ========================================================================
 
+    // v9.2: EXACT MATCH blocked accounts - no substring matching to avoid false positives
+    // These are the EXACT lowercase handles that should be blocked
     const BLOCKED_ACCOUNTS = new Set([
-        'netflix', 'netflixindia', 'primevideo', 'disneyplus', 'hulu',
-        'hbomax', 'peacock', 'paramountplus', 'appletv', 'amazonprime',
-        'spotify', 'youtube', 'twitter', 'x', 'google', 'microsoft'
+        // Streaming services (competitors) - exact handles
+        'netflix', 'netflixindia', 'netflixuk', 'netflixfilm', 'netflixqueue',
+        'primevideo', 'primevideoin', 'primevideouk',
+        'disneyplus', 'disneyplusuk', 'disneyplusin',
+        'hulu', 'hbomax', 'maxstream', 'peacocktv', 'peacock',
+        'paramountplus', 'appletv', 'appletvplus',
+        'amazonprime', 'amazonprimein', 'amazonprimeuk',
+        'spotify', 'spotifyindia', 'youtube', 'youtubeindia',
+        'crunchyroll', 'funimation',
+
+        // Tech giants - exact official handles
+        'amazon', 'amazonin', 'amazondotcom', 'amazonhelp',
+        'apple', 'applesupport', 'applemusic',
+        'google', 'googlechrome', 'googleplay', 'googleindia',
+        'microsoft', 'microsoftindia', 'windows',
+        'meta', 'facebook', 'facebookapp', 'instagram', 'instagramindia',
+        'tiktok', 'tiktok_us', 'tiktokindia',
+        'samsung', 'samsungindia', 'samsungmobile',
+        'sonyindia', 'sonyuk', 'sonypictures',
+        'oneplus', 'oneplusindia', 'xiaomi', 'xiaomiindia',
+        'oppoindia', 'vivoindia',
+
+        // Retailers - exact handles (no short strings like 'lg', 'target')
+        'walmart', 'walmartinc', 'amazondeals',
+        'bestbuy', 'bestbuysupport',
+        'ebay', 'ebaydeals', 'etsy', 'alibaba', 'aliexpress',
+        'flipkart', 'flipkartstories', 'myntra', 'nykaa', 'zomato', 'swiggy',
+
+        // Cars - full brand handles only
+        'ford', 'fordmotorco', 'chevrolet', 'toyota', 'toyotausa',
+        'honda', 'hondausa', 'bmw', 'bmwusa', 'mercedesbenz', 'mercedes',
+        'audi', 'audiusa', 'tesla', 'teslamotors', 'hyundai', 'hyundaiusa',
+        'kia', 'kiamotors', 'vw', 'volkswagen',
+
+        // News - full handles
+        'cnn', 'cnnpolitics', 'cnnbrk', 'bbc', 'bbcnews', 'bbcbreaking',
+        'nytimes', 'washingtonpost', 'reuters', 'apnews',
+        'foxnews', 'msnbc', 'nbcnews', 'abcnews', 'cbsnews',
+
+        // Banks/Finance - full handles
+        'chase', 'bankofamerica', 'wellsfargo', 'citi', 'citibank',
+        'americanexpress', 'amex',
+        'visa', 'visanews', 'mastercard',
+        'paypal', 'paypalsupport', 'venmo', 'cashapp',
+
+        // Other advertisers - full handles
+        'cocacola', 'cocacolaco', 'pepsi', 'pepsimax',
+        'mcdonalds', 'starbucks', 'starbucksuk',
+        'nike', 'nikestore', 'adidas', 'adidasoriginals',
+        'uber', 'uber_support', 'lyft', 'doordash', 'grubhub', 'airbnb'
     ]);
 
     const INDIA_KEYWORDS = [
+        // Core India terms
         'india', 'indian', 'bollywood', 'hindi', 'desi', 'bharat',
-        'mumbai', 'delhi', 'bangalore', 'hyderabad', 'chennai', 'kolkata',
-        'ipl', 'cricket', 'bigg boss', 'salman khan', 'shah rukh'
+        // Cities
+        'mumbai', 'delhi', 'bangalore', 'hyderabad', 'chennai', 'kolkata', 'pune',
+        // Regional film industries (CRITICAL - was missing)
+        'kollywood', 'tollywood', 'mollywood', 'sandalwood',
+        'tamil', 'telugu', 'malayalam', 'kannada', 'marathi',
+        // Sports/Entertainment
+        'ipl', 'cricket', 'bigg boss', 'salman khan', 'shah rukh', 'srk',
+        // Currency (catches ₹22 CR type posts)
+        'crore', ' cr ', 'lakh', 'rupee',
+        // Actors/Directors commonly mentioned
+        'prabhas', 'rajinikanth', 'vijay', 'allu arjun'
     ];
 
     // ========================================================================
@@ -266,8 +325,9 @@
 
     function isBlockedAccount(handle) {
         const lower = handle.toLowerCase();
-        for (const b of BLOCKED_ACCOUNTS) if (lower.includes(b)) return true;
-        return false;
+        // v9.1 FIX: Use EXACT match to avoid false positives
+        // e.g., 'beresfordsriley' was matching 'ford', 'sceneXtras' was matching 'x'
+        return BLOCKED_ACCOUNTS.has(lower);
     }
 
     function containsIndiaContent(text) {
@@ -281,7 +341,49 @@
 
     function isPromotedTweet(el) {
         const t = el.innerText.toLowerCase();
-        return t.includes('promoted') || t.includes('ad ·');
+        return t.includes('promoted') || t.includes('ad ·') || t.includes('sponsored');
+    }
+
+    // v9.1: Check if tweet is actually about movies/TV shows
+    // This prevents replying to unrelated ads that slip through
+    function isMovieTVRelated(text) {
+        const lower = text.toLowerCase();
+
+        // v9.1 FIX: EXCLUDE video game content first
+        // HD-2D, gameplay, etc. are video game terms, not movie terms
+        const videoGameExclusions = [
+            'hd-2d', 'hd2d', 'gameplay', 'playthrough', 'speedrun',
+            'nintendo', 'playstation', 'xbox', 'steam deck', 'pc gaming',
+            'rpg', 'jrpg', 'mmorpg', 'fps', 'moba',
+            'dragon quest', 'final fantasy', 'zelda', 'mario', 'pokemon',
+            'elden ring', 'dark souls', 'resident evil', 'god of war',
+            'fortnite', 'valorant', 'league of legends', 'minecraft',
+            'twitch', 'streamer', 'esports', 'gaming'
+        ];
+
+        // If it contains video game terms, it's NOT movie/TV related
+        if (videoGameExclusions.some(term => lower.includes(term))) {
+            return false;
+        }
+
+        const movieTVKeywords = [
+            'movie', 'movies', 'film', 'films', 'cinema', 'cinematic',
+            'show', 'shows', 'series', 'tv', 'television', 'streaming',
+            'watch', 'watched', 'watching', 'binge', 'binged',
+            'netflix', 'prime', 'disney', 'hbo', 'hulu',
+            'actor', 'actress', 'director', 'cast', 'trailer',
+            'episode', 'season', 'sequel', 'prequel',
+            'horror', 'comedy', 'drama', 'thriller', 'action', 'romance',
+            'animated', 'animation', 'anime', 'documentary',
+            'oscar', 'emmy', 'golden globe', 'box office',
+            'marvel', 'dc', 'star wars', 'lotr', 'harry potter',
+            'rated', 'rating', 'review', 'reviews', 'imdb', 'rotten tomatoes',
+            'top 10', 'top ten', 'ranking', 'ranked',
+            'underrated', 'overrated', 'hidden gem', 'must see', 'must watch'
+        ];
+
+        // Must have at least one movie/TV keyword
+        return movieTVKeywords.some(kw => lower.includes(kw));
     }
 
     // Pre-filter: Check if tweet is likely streaming-related
@@ -341,7 +443,7 @@
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method,
-                url: `${CONFIG.BRAIN_URL}${endpoint}`,
+                url: `${CONFIG.BRAIN_URL}${endpoint} `,
                 headers: { 'Content-Type': 'application/json' },
                 data: data ? JSON.stringify(data) : null,
                 timeout: 30000,
@@ -677,7 +779,7 @@
                     STATE.currentSearchLang = searchData.lang_code || 'en';
                     STATE.currentSearchCategory = searchData.category || 'trending';
 
-                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title}, Lang: ${searchData.lang_code}, Category: ${searchData.category})`);
+                    log(`Smart Search: "${searchData.search_term}"(Title: ${searchData.title}, Lang: ${searchData.lang_code}, Category: ${searchData.category})`);
                     saveState();
 
                     window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query`;
@@ -785,6 +887,13 @@
             }
             if (containsIndiaContent(data.tweet_text)) {
                 log(`⏭️ Skip: India content`);
+                skippedOther++;
+                continue;
+            }
+
+            // v9.1: Movie/TV relevance check - skip non-movie content (like Amazon watch ads)
+            if (!isMovieTVRelated(data.tweet_text)) {
+                log(`⏭️ Skip: Not movie/TV related`);
                 skippedOther++;
                 continue;
             }

@@ -38,7 +38,7 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 if not GROQ_API_KEY:
     print("WARNING: GROQ_API_KEY not found in environment variables!")
 
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "qwen/qwen3-32b"
 DATABASE_PATH = "xbot_memory.db"
 SITE_URL = "streamixapp.pages.dev"
 
@@ -641,111 +641,167 @@ class SmartSearch:
         self.last_ai_generation = None
     
     def generate_ai_search_terms(self) -> List[str]:
-        """Use AI to generate creative, high-value search terms that attract movie/TV lovers."""
+        """Hybrid: Comprehensive base terms + AI-generated variations."""
+        
+        # COMPREHENSIVE BASE TERMS - ALL contain movie/show/film/series keywords
+        base_terms = [
+            # === MOVIES - Underrated/Overlooked ===
+            "underrated movie",
+            "underrated movies",
+            "most underrated movie",
+            "criminally underrated movie",
+            "overlooked movie",
+            "overlooked movies",
+            "hidden gem movie",
+            
+            # === MOVIES - Ratings ===
+            "10/10 movie",
+            "perfect movie",
+            "best movie ever",
+            "best movies ever",
+            "greatest movies ever",
+            
+            # === MOVIES - Lists/Rankings ===
+            "my top 10 movies",
+            "my top movies",
+            "movie tier list",
+            "movie ranking",
+            "best movies 2025",
+            "best movies 2025 ranked",
+            "top movies 2025",
+            "movies of 2025 ranked",
+            "must watch movies",
+            "movies everyone should watch",
+            
+            # === MOVIES - Recommendations ===
+            "movie recommendations",
+            "recommend me a movie",
+            "what movie to watch",
+            "good movies to watch",
+            
+            # === TV SHOWS - Underrated/Overlooked ===
+            "underrated show",
+            "underrated shows",
+            "underrated tv show",
+            "most underrated show",
+            "criminally underrated show",
+            "overlooked show",
+            "hidden gem show",
+            
+            # === TV SHOWS - Ratings ===
+            "10/10 show",
+            "perfect show",
+            "best show ever",
+            "best shows ever",
+            "best tv shows",
+            
+            # === TV SHOWS - Lists/Rankings ===
+            "my top 10 shows",
+            "tv show tier list",
+            "show tier list",
+            "best shows 2025",
+            "best tv shows 2025",
+            "best shows 2025 ranked",
+            "tv shows 2025 ranked",
+            "must watch shows",
+            "must watch series",
+            "binge worthy shows",
+            
+            # === TV SHOWS - Recommendations ===
+            "show recommendations",
+            "tv show recommendations",
+            "recommend me a show",
+            "what show to watch",
+            "series recommendations",
+        ]
+        
+        # If no AI available, return base terms
         if not self.groq_client:
-            return []
+            return base_terms
         
-        # Only regenerate every 30 minutes
+        # Only regenerate AI variations every 30 minutes
         if self.last_ai_generation and (datetime.now(timezone.utc) - self.last_ai_generation).seconds < 1800:
-            return self.ai_terms_cache
+            return base_terms + self.ai_terms_cache
         
-        prompt = """Generate 50 unique X.com (Twitter) search queries that will find VIRAL, HIGH-ENGAGEMENT posts (100K-1M+ impressions) where MOVIE/TV LOVERS congregate.
+        # Ask AI to generate MORE variations
+        prompt = """Generate 30 SHORT search terms (2-4 words) for finding viral MOVIE and TV SHOW posts on Twitter.
 
-=== CORE STRATEGY ===
-We want to find POSTS THAT ACT AS HONEYPOTS for movie lovers. These are viral posts that attract massive engagement - lists, ratings, hot takes, debates, and polls.
+STRICT RULE: Every term MUST contain one of these EXACT words:
+- movie, movies, film, films (for movies)
+- show, shows, series, tv (for TV)
 
-=== CATEGORY 1: RATING POSTS (20% of terms) - HIGHEST VIRAL POTENTIAL ===
-These simple rating posts consistently hit 500K-1M impressions:
-- "10/10 movie" / "10/10 🍿" / "10/10 show"
-- "perfect movie" / "masterpiece movie" / "flawless film"
-- "this movie is a 10" / "absolute 10/10"
-- "perfect film" / "cinema perfection"
-Examples from viral posts: "@PopcornPlug_ 10/10 🍿💯" (980K views)
+❌ REJECT: "cinematic gem", "peak cinema", "banger" - missing required keyword!
+✅ ACCEPT: "hidden gem movie", "peak cinema movie", "absolute banger show"
 
-=== CATEGORY 2: HOT TAKES & CONTROVERSY (20% of terms) - MEGA ENGAGEMENT ===
-Controversial opinions trigger massive debate and engagement:
-- "underrated movie" / "most underrated film" / "slept on movie"
-- "overhated movie" / "I don't understand the hate"
-- "unpopular opinion movie" / "hot take movies"
-- "overrated movie" / "most overrated film"
-- "this movie deserves more love" / "criminally underrated"
-Examples: "@uniquemoviemom I still don't understand the hate for this movie" (719K views)
+GENERATE 15 MOVIE TERMS + 15 TV SHOW TERMS:
 
-=== CATEGORY 3: TOP/BEST LISTS (25% of terms) - PROVEN HONEYPOTS ===
-List posts aggregate movie lovers who comment, debate, and seek recommendations:
-- "top 50 movies" / "top 100 movies" / "top 10 movies"
-- "best movies of all time" / "greatest films ever"
-- "my movie tier list" / "my tv show ranking"
-- "movies everyone should watch" / "must see films"
-- "top movies 2025" / "best shows 2025"
+MOVIE PATTERNS TO FOLLOW:
+- "underrated movie" / "overlooked movies"
+- "best movies 2025" / "top movies ranked"
+- "movie tier list" / "movie recommendations"
+- "10/10 movie" / "perfect movie"
 
-=== CATEGORY 4: GENRE-SPECIFIC LISTS (15% of terms) - NICHE BUT LOYAL ===
-Genre fans are highly engaged and passionate:
-- "best horror movies" / "scariest movies ever" / "horror movie recommendations"
-- "best crime shows" / "top thriller movies" / "best action movies"
-- "top drama series" / "best comedy movies" / "sci-fi movies"
-- "best anime movies" / "top Korean movies" / "best foreign films"
-Examples: "@1SonkoScenes TOP DRUGS & DEA TV SERIES OF ALL TIME" (list posts)
+TV SHOW PATTERNS TO FOLLOW:
+- "underrated show" / "overlooked series"
+- "best shows 2025" / "tv shows ranked"
+- "show tier list" / "series recommendations"
+- "binge worthy shows" / "must watch series"
 
-=== CATEGORY 5: POLLS & COMPARISONS (10% of terms) - HIGH INTERACTION ===
-Poll-style posts drive comments as people share their picks:
-- "choose wisely movie" / "pick one movie" / "which movie is better"
-- "movie battle" / "film showdown" / "vs movie"
-- "if you had to pick one movie" / "desert island movie"
-Examples: "@HorrorCarnival Six films. One ultimate winner. Choose wisely."
+RULES:
+1. 2-4 words MAX
+2. MUST contain: movie/movies/film OR show/shows/series/tv
+3. NO emojis, NO hashtags, NO sentences
 
-=== CATEGORY 6: WATCH INTENT (10% of terms) - DIRECT CONVERSION ===
-Active recommendation seeking - highest conversion potential:
-- "what should I watch" / "movie recommendations please"
-- "looking for good movies" / "need show recommendations"
-- "binge worthy shows" / "what to binge this weekend"
-- "recommend me a movie" / "suggest a good show"
-
-=== DO NOT INCLUDE ===
-❌ Actor/director specific: "Jordan Peele movies", "Margot Robbie"
-❌ Specific franchises: "Marvel movies", "Star Wars", "Harry Potter"
-❌ Single movie titles (like "Inception", "Avatar")
-❌ Frustration terms: "netflix expensive", "canceling subscription"
-❌ Reviews: "movie review", "just watched" (too passive)
-
-=== WHY THESE CATEGORIES WORK ===
-We studied REAL viral posts from X:
-- @PopcornPlug_ "10/10 🍿💯" → 980K impressions
-- @uniquemoviemom "I don't understand the hate" → 719K impressions  
-- @Kingvannytz_ "10/10 This movie hits different" → 108K impressions
-- @Mrbankstips "Movies Recommendations for you" → 1.2M impressions
-
-These patterns attract:
-✅ Movie lovers debating opinions
-✅ People asking "where to watch?"
-✅ High-intent streaming seekers
-✅ Engaged communities
-
-Return ONLY a JSON array of 50 search terms, nothing else.
-Distribution: 20% rating, 20% hot takes, 25% lists, 15% genre, 10% polls, 10% intent.
-Example: ["10/10 movie", "underrated movie", "top 50 movies", "best horror movies", "choose wisely movie", "what should I watch"]"""
+Return JSON array: ["term1", "term2", ...]"""
 
         try:
             response = self.groq_client.chat.completions.create(
                 model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.9,  # High creativity
-                max_tokens=2000,  # Increased for 50 terms
+                temperature=0.9,
+                max_tokens=3000,
             )
             
             result = response.choices[0].message.content.strip()
-            # Parse JSON array
+            
+            # Handle <think> block
+            if "<think>" in result:
+                import re
+                think_match = re.search(r'<think>(.*?)</think>', result, re.DOTALL)
+                if think_match:
+                    thinking = think_match.group(1).strip()
+                    print(f"\n🧠 [AI VARIATION THINKING]:\n{thinking[:400]}...\n")
+                result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL).strip()
+            
+            # Parse JSON
             import json
-            if result.startswith("["):
-                terms = json.loads(result)
-                self.ai_terms_cache = terms
+            if "[" in result and "]" in result:
+                start = result.index("[")
+                end = result.rindex("]") + 1
+                raw_variations = json.loads(result[start:end])
+                
+                # VALIDATE: Filter out terms without required keywords
+                required_keywords = ['movie', 'movies', 'film', 'films', 'show', 'shows', 'series', 'tv']
+                variations = [
+                    term for term in raw_variations 
+                    if any(kw in term.lower() for kw in required_keywords)
+                ]
+                
+                rejected = len(raw_variations) - len(variations)
+                if rejected > 0:
+                    print(f"[AI Search] Filtered out {rejected} terms missing keywords")
+                
+                self.ai_terms_cache = variations
                 self.last_ai_generation = datetime.now(timezone.utc)
-                print(f"[AI Search] Generated {len(terms)} creative search terms")
-                return terms
+                
+                # Deduplicate: combine and keep unique terms
+                all_terms = list(dict.fromkeys(base_terms + variations))
+                print(f"[AI Search] {len(all_terms)} unique honeypot terms ready")
+                return all_terms
         except Exception as e:
-            print(f"[AI Search] Error generating terms: {e}")
+            print(f"[AI Search] Error: {e}")
         
-        return []
+        return base_terms
         
     def generate_search_terms(self, lang_code: str, region: str) -> int:
         """Generate validated search terms for a specific language."""
@@ -1024,103 +1080,104 @@ class LLMClient:
         
         context_section = "\n".join(context_blocks) if context_blocks else "No additional context."
         
-        system_prompt = f"""You are a genuine movie enthusiast who discovered streamixapp.pages.dev and now uses it constantly. Your replies should feel like a friend casually sharing a tip.
+        system_prompt = f"""You are a conversion optimization expert AND genuine movie lover. Your goal is to get people to CLICK on streamixapp.pages.dev.
 
-=== THE TWEET TO REPLY TO ===
+=== YOUR MISSION ===
+Craft a reply that makes someone WANT to visit streamixapp.pages.dev. Not just mention it - make them genuinely curious to click.
+
+=== THE TWEET ===
 "{tweet_text}"
 
-=== CRITICAL: EXTRACTING MOVIE/SHOW NAMES ===
-1. ONLY reference movies/shows that are EXPLICITLY mentioned in the tweet above
-2. If the tweet mentions a SPECIFIC movie (e.g., "Hell or High Water"), your reply MUST use THAT EXACT title
-3. If the tweet lists MULTIPLE movies, pick the FIRST or MOST POPULAR one to mention specifically
-4. NEVER guess or assume a movie title - only use what's written in the tweet
-5. If NO specific movie is named but they're discussing movies generally, use phrases like "this stuff" or "these"
+=== THINK BEFORE YOU REPLY ===
+Before writing, reason through these questions:
 
-=== VARIETY IS KEY - ROTATE REPLY STYLES ===
+1. **WHO is this person?**
+   - Are they a casual viewer or cinephile?
+   - Are they frustrated, excited, seeking recommendations?
+   - What would resonate with THEM specifically?
 
-STYLE A - Casual Direct (for single movie posts):
-"yo [MOVIE NAME] is on streamixapp.pages.dev in 4K, no signup needed"
-"[MOVIE NAME] is fire, watched it on streamixapp.pages.dev btw. completely free"
-"streamixapp.pages.dev has [MOVIE NAME] in HD, been my go-to site"
+2. **WHAT problem can I solve?**
+   - Can't find where to watch something? → I have the answer
+   - Tired of expensive subscriptions? → I have a free alternative
+   - Looking for quality? → I can confirm it's 4K
+   - Want no-hassle streaming? → No signup required
 
-STYLE B - Personal Touch (for list/recommendation posts):
-"watched [FIRST MOVIE] on streamixapp.pages.dev last week, 4K + no ads"
-"streamixapp.pages.dev has most of these, I binged like 5 there. no signup"
-"been watching these on streamixapp.pages.dev, actually free and looks great"
+3. **HOW do I make them CLICK?**
+   - Build rapport FIRST (agree, validate, relate)
+   - THEN naturally mention the solution
+   - Make it sound like insider knowledge, not an ad
+   - Create curiosity or urgency
 
-STYLE C - Enthusiastic Match (for excited 10/10 posts):
-"absolute banger! caught it on streamixapp.pages.dev, 4K quality and zero ads 🔥"
-"so good! streamixapp.pages.dev has it in HD btw, completely free"
-"agreed 100%, watched this on streamixapp.pages.dev. no signup needed"
+4. **What would make ME click this reply?**
+   - Genuine enthusiasm is contagious
+   - Specific details are more convincing than generic claims  
+   - Solving their exact problem > listing random features
 
-STYLE D - Helpful Response (for "where to watch" or recommendation seeking):
-"streamixapp.pages.dev has this + way more, been using it for months. free and no popups"
-"check streamixapp.pages.dev, it's where I find everything. 4K and no signup"
-"streamixapp.pages.dev should have it, that's my go-to. actually free"
+=== CONVERSION PSYCHOLOGY ===
 
-STYLE E - Empathetic (for frustrated streaming subscription posts):
-"felt this so hard. switched to streamixapp.pages.dev, genuinely free with no ads"
-"same here, streamixapp.pages.dev solved it for me. no popups, no signup"
-"this is why I use streamixapp.pages.dev now, works better than paid stuff tbh"
+❌ LOW CONVERSION (sounds like an ad):
+"Check out streamixapp.pages.dev for free movies in 4K!"
 
-STYLE F - Conversational (for discussion/debate posts):
-"love this one! streamixapp.pages.dev has it in 4K if anyone needs"
-"great picks, most of these are on streamixapp.pages.dev btw. no signup required"
-"underrated for real, watched it on streamixapp.pages.dev. completely free"
+✅ HIGH CONVERSION (sounds like a friend):
+"yo I literally watched this last night on streamixapp.pages.dev - 4K and no account needed, wild that it's free"
+
+The difference:
+- Personal experience ("I watched")
+- Specific timing ("last night")
+- Genuine surprise ("wild that it's free")
+- Natural language ("yo", "literally")
 
 === CONTEXT ===
 {context_section}
 
-=== ABSOLUTE RULES - DO NOT BREAK ===
-1. MAX 140 characters - shorter is better
-2. Include streamixapp.pages.dev EXACTLY ONCE (no https://, no www)
-3. ZERO hashtags - looks like spam
-4. Must sound like a real person, not a bot
-5. Include ONE benefit: 4K quality / no signup / free / no ads / no popups
-6. NEVER invent or guess movie names - only use what's in the tweet
-7. Match the energy: excited post = excited reply, chill post = chill reply
-8. If the tweet is a 10/10 rating, be enthusiastic and agreeable
-9. If it's a list, pick ONE specific title to mention, OR say "most of these"
-10. NEVER carry over context from previous tweets - each reply is independent
+=== HARD RULES (DO NOT BREAK) ===
+1. MAX 280 characters (USE this space wisely - more words = more persuasion)
+2. Include streamixapp.pages.dev EXACTLY ONCE
+3. ZERO hashtags
+4. Only reference movies EXPLICITLY in the tweet (never guess)
+5. If no movie named, use "this" or "it" - NEVER invent a title
+6. Sound human, not promotional
 
-=== EXAMPLES WITH REASONING ===
+=== USE YOUR 280 CHARACTERS WISELY ===
+You have 280 chars - that's enough to:
+- Build genuine rapport (agree, empathize, relate)
+- Share a personal experience ("I watched this last week...")
+- Explain WHY the site is good ("no account needed, just clicked and it played")
+- Add social proof ("been using it for months")
+- Create curiosity ("wild that it's actually free")
 
-Tweet: "Hell or High Water (2016) is criminally underrated"
-Reply: "so underrated! caught it on streamixapp.pages.dev, 4K and completely free"
-Why: Single movie mentioned → use exact title energy match
+Short replies look like bots. Longer, natural replies get clicks.
 
-Tweet: "My top 10 movies:
-1. Interstellar
-2. Inception  
-3. The Dark Knight..."
-Reply: "watched Interstellar on streamixapp.pages.dev in 4K, no signup. fire list btw"
-Why: List → pick first/most popular, acknowledge the list
+=== SKIP IF ===
+❌ Sports, gaming, music, politics → SKIP
+❌ Brand/corporate accounts → SKIP
+❌ Not movie/TV related → SKIP
 
-Tweet: "10/10 🍿🔥 This movie hits different"
-Reply: "absolute banger, streamixapp.pages.dev has it in 4K. no ads too 🔥"
-Why: No specific title → DON'T guess, use generic reference, match emoji energy
+=== EXAMPLES OF PERSUASIVE REPLIES (USE FULL 280 CHARS) ===
 
-Tweet: "where can I watch The Substance"
-Reply: "streamixapp.pages.dev has it in HD, been using it for months. completely free"
-Why: Direct question → direct answer with the site
+Tweet: "I need something good to watch tonight"
+🧠 Thinking: "Active seeker = highest intent. Be helpful, give the solution, add credibility."
+Reply: "honestly streamixapp.pages.dev has been my go-to lately. everything's free, no account needed, and the quality is actually really good. found so many hidden gems there that I never would've paid for on Netflix"
 
-Tweet: "Netflix prices are insane, might cancel"
-Reply: "felt this. switched to streamixapp.pages.dev, actually free and no popups"
-Why: Frustration → empathy + solution
+Tweet: "The Aviator is Scorsese's most underrated film"
+🧠 Thinking: "Cinephile making a take. Validate first, add personal experience, then mention the site naturally."
+Reply: "100% agree, it's criminally overlooked. Leo's performance in this is insane. just rewatched it on streamixapp.pages.dev in 4K - no ads, no signup, just hit play. the way Scorsese captures Hughes' mania is unmatched"
 
-Tweet: "I highly recommend Person of Interest"
-Reply: "Person of Interest is great! it's on streamixapp.pages.dev btw, 4K and free"
-Why: Specific show → use exact name, be agreeable
+Tweet: "Netflix just raised prices AGAIN 😤"
+🧠 Thinking: "Frustration = opportunity. Deep empathy, share my story, offer relief naturally."
+Reply: "felt this SO hard. I cancelled mine last month after they raised it again. switched to streamixapp.pages.dev and honestly? it works better. everything's free, no popups, and the 4K quality is legit. wish I'd switched sooner"
 
-=== SKIP CONDITIONS ===
-❌ Sports/gaming/music/politics content → SKIP
-❌ Corporate/brand accounts → SKIP  
-❌ Non-English (unless search_lang matches) → SKIP
-❌ Already has 50+ replies → SKIP
+Tweet: "My top 5 movies of 2024: 1. Dune Part Two 2. Civil War..."
+🧠 Thinking: "Movie list = engaged audience. Join the conversation, pick popular movie, share experience."
+Reply: "Dune Part Two in 4K was a whole experience. watched it on streamixapp.pages.dev - no signup, just clicked and it started playing immediately. the visuals on a big screen with that quality... insane. solid list btw"
 
-=== OUTPUT FORMAT (STRICT JSON) ===
-Movie/TV related: {{"action": "REPLY", "reason": "1-5 words", "draft": "your natural reply here"}}
-Not relevant: {{"action": "SKIP", "reason": "not movie/TV - [topic]", "draft": null}}
+Tweet: "what's a movie that genuinely changed your perspective on life?"
+🧠 Thinking: "Deep question = thoughtful response. Be genuine, share something personal, mention site naturally."
+Reply: "Eternal Sunshine honestly hit different. the way it explores memory and love messed me up for days. rewatched it recently on streamixapp.pages.dev (free, no account) and it hit even harder the second time"
+
+=== OUTPUT (STRICT JSON) ===
+Movie/TV: {{"action": "REPLY", "reason": "2-5 words", "draft": "your persuasive 280-char reply"}}
+Skip: {{"action": "SKIP", "reason": "why skipping", "draft": null}}
 """
 
 
@@ -1138,11 +1195,21 @@ Not relevant: {{"action": "SKIP", "reason": "not movie/TV - [topic]", "draft": n
                     {"role": "user", "content": user_message}
                 ],
                 temperature=0.8,  # Slightly higher for more natural variation
-                max_tokens=500
+                max_tokens=2000  # Increased for reasoning models (think block + JSON)
             )
             
             result_text = response.choices[0].message.content.strip()
             
+            # Extract and log "Thinking" process (DeepSeek/Qwen Reasoning)
+            if "<think>" in result_text:
+                import re
+                think_match = re.search(r'<think>(.*?)</think>', result_text, re.DOTALL)
+                if think_match:
+                    thinking_content = think_match.group(1).strip()
+                    print(f"\n🧠 [AI THOUGHT PROCESS]:\n{thinking_content}\n")
+                    # Remove the thinking block to get pure JSON
+                    result_text = re.sub(r'<think>.*?</think>', '', result_text, flags=re.DOTALL).strip()
+
             # Clean up markdown if present
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
