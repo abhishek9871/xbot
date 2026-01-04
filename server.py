@@ -649,52 +649,81 @@ class SmartSearch:
         if self.last_ai_generation and (datetime.now(timezone.utc) - self.last_ai_generation).seconds < 1800:
             return self.ai_terms_cache
         
-        prompt = """Generate 50 unique X.com (Twitter) search queries that will find HIGH-ENGAGEMENT posts where MOVIE/TV LOVERS congregate.
+        prompt = """Generate 50 unique X.com (Twitter) search queries that will find VIRAL, HIGH-ENGAGEMENT posts (100K-1M+ impressions) where MOVIE/TV LOVERS congregate.
 
 === CORE STRATEGY ===
-We want to find POSTS THAT ACT AS HONEYPOTS for movie lovers. These are posts that movie enthusiasts engage with - lists, rankings, tier lists, recommendations.
+We want to find POSTS THAT ACT AS HONEYPOTS for movie lovers. These are viral posts that attract massive engagement - lists, ratings, hot takes, debates, and polls.
 
-=== PRIORITY 1: TOP/BEST LISTS (HIGHEST VALUE - 60% of terms) ===
-These posts naturally aggregate movie lovers who comment, debate, and seek recommendations:
+=== CATEGORY 1: RATING POSTS (20% of terms) - HIGHEST VIRAL POTENTIAL ===
+These simple rating posts consistently hit 500K-1M impressions:
+- "10/10 movie" / "10/10 🍿" / "10/10 show"
+- "perfect movie" / "masterpiece movie" / "flawless film"
+- "this movie is a 10" / "absolute 10/10"
+- "perfect film" / "cinema perfection"
+Examples from viral posts: "@PopcornPlug_ 10/10 🍿💯" (980K views)
+
+=== CATEGORY 2: HOT TAKES & CONTROVERSY (20% of terms) - MEGA ENGAGEMENT ===
+Controversial opinions trigger massive debate and engagement:
+- "underrated movie" / "most underrated film" / "slept on movie"
+- "overhated movie" / "I don't understand the hate"
+- "unpopular opinion movie" / "hot take movies"
+- "overrated movie" / "most overrated film"
+- "this movie deserves more love" / "criminally underrated"
+Examples: "@uniquemoviemom I still don't understand the hate for this movie" (719K views)
+
+=== CATEGORY 3: TOP/BEST LISTS (25% of terms) - PROVEN HONEYPOTS ===
+List posts aggregate movie lovers who comment, debate, and seek recommendations:
 - "top 50 movies" / "top 100 movies" / "top 10 movies"
-- "top 20 movies 2025" / "top 10 shows 2025"
 - "best movies of all time" / "greatest films ever"
 - "my movie tier list" / "my tv show ranking"
-- "movies I recommend" / "best movies to watch"
-- "rating every movie I watched" / "my movie diary"
 - "movies everyone should watch" / "must see films"
+- "top movies 2025" / "best shows 2025"
 
-=== PRIORITY 2: CURATED RECOMMENDATIONS (25% of terms) ===
-- "underrated movies" / "hidden gem movies"
-- "movies that changed my life" / "comfort movies"
-- "perfect movies" / "10/10 movies"
-- "movies to watch before you die"
-- "criminally underrated shows"
+=== CATEGORY 4: GENRE-SPECIFIC LISTS (15% of terms) - NICHE BUT LOYAL ===
+Genre fans are highly engaged and passionate:
+- "best horror movies" / "scariest movies ever" / "horror movie recommendations"
+- "best crime shows" / "top thriller movies" / "best action movies"
+- "top drama series" / "best comedy movies" / "sci-fi movies"
+- "best anime movies" / "top Korean movies" / "best foreign films"
+Examples: "@1SonkoScenes TOP DRUGS & DEA TV SERIES OF ALL TIME" (list posts)
 
-=== PRIORITY 3: DISCOVERY MODE (15% of terms) ===
-Active recommendation seeking:
-- "what should I watch" / "movie recommendations"
+=== CATEGORY 5: POLLS & COMPARISONS (10% of terms) - HIGH INTERACTION ===
+Poll-style posts drive comments as people share their picks:
+- "choose wisely movie" / "pick one movie" / "which movie is better"
+- "movie battle" / "film showdown" / "vs movie"
+- "if you had to pick one movie" / "desert island movie"
+Examples: "@HorrorCarnival Six films. One ultimate winner. Choose wisely."
+
+=== CATEGORY 6: WATCH INTENT (10% of terms) - DIRECT CONVERSION ===
+Active recommendation seeking - highest conversion potential:
+- "what should I watch" / "movie recommendations please"
 - "looking for good movies" / "need show recommendations"
-- "binge worthy shows" / "what to binge"
+- "binge worthy shows" / "what to binge this weekend"
+- "recommend me a movie" / "suggest a good show"
 
 === DO NOT INCLUDE ===
-❌ Actor/director specific: "Jordan Peele movies", "Margot Robbie", "Timothee Chalamet"
+❌ Actor/director specific: "Jordan Peele movies", "Margot Robbie"
 ❌ Specific franchises: "Marvel movies", "Star Wars", "Harry Potter"
-❌ Single movie titles
+❌ Single movie titles (like "Inception", "Avatar")
 ❌ Frustration terms: "netflix expensive", "canceling subscription"
-❌ News/reviews: "movie review", "just watched"
+❌ Reviews: "movie review", "just watched" (too passive)
 
-=== WHY THIS WORKS ===
-Posts like "my top 50 movies" attract:
-- The poster (movie lover)
-- People debating the list (movie lovers)
-- People asking "where to watch X?" (high intent)
-- People sharing their own lists (engagement)
+=== WHY THESE CATEGORIES WORK ===
+We studied REAL viral posts from X:
+- @PopcornPlug_ "10/10 🍿💯" → 980K impressions
+- @uniquemoviemom "I don't understand the hate" → 719K impressions  
+- @Kingvannytz_ "10/10 This movie hits different" → 108K impressions
+- @Mrbankstips "Movies Recommendations for you" → 1.2M impressions
 
-This is the IDEAL audience for a streaming site recommendation.
+These patterns attract:
+✅ Movie lovers debating opinions
+✅ People asking "where to watch?"
+✅ High-intent streaming seekers
+✅ Engaged communities
 
-Return ONLY a JSON array of 50 search terms, nothing else. Make 60% list-based, 25% curated, 15% discovery.
-Example: ["top 50 movies", "best shows 2025", "my movie tier list", "underrated movies", "what should I watch"]"""
+Return ONLY a JSON array of 50 search terms, nothing else.
+Distribution: 20% rating, 20% hot takes, 25% lists, 15% genre, 10% polls, 10% intent.
+Example: ["10/10 movie", "underrated movie", "top 50 movies", "best horror movies", "choose wisely movie", "what should I watch"]"""
 
         try:
             response = self.groq_client.chat.completions.create(
@@ -838,10 +867,20 @@ Example: ["top 50 movies", "best shows 2025", "my movie tier list", "underrated 
             }
         
         # Ultimate fallback - still use list-based terms, not movie titles
+        # Fallback terms covering all 6 viral categories
         fallback_list_terms = [
-            "top 50 movies", "best movies of all time", "my movie tier list",
-            "movies everyone should watch", "underrated movies", "best shows 2025",
-            "what should I watch", "movie recommendations", "binge worthy shows"
+            # Category 1: Rating Posts (highest viral potential)
+            "10/10 movie", "10/10 🍿", "perfect movie", "masterpiece movie",
+            # Category 2: Hot Takes & Controversy
+            "underrated movie", "overhated movie", "slept on movie", "unpopular opinion movie",
+            # Category 3: Top/Best Lists
+            "top 50 movies", "best movies of all time", "my movie tier list", "movies everyone should watch",
+            # Category 4: Genre-Specific
+            "best horror movies", "best crime shows", "top thriller movies",
+            # Category 5: Polls & Comparisons
+            "choose wisely movie", "pick one movie",
+            # Category 6: Watch Intent
+            "what should I watch", "movie recommendations", "binge worthy shows", "recommend me a movie"
         ]
         import random
         return {
