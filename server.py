@@ -1131,15 +1131,15 @@ The difference:
 {context_section}
 
 === HARD RULES (DO NOT BREAK) ===
-1. MAX 280 characters (USE this space wisely - more words = more persuasion)
+1. MAX 240 characters (STRICT LIMIT - going over 280 breaks the bot)
 2. Include streamixapp.pages.dev EXACTLY ONCE
 3. ZERO hashtags
 4. Only reference movies EXPLICITLY in the tweet (never guess)
 5. If no movie named, use "this" or "it" - NEVER invent a title
 6. Sound human, not promotional
 
-=== USE YOUR 280 CHARACTERS WISELY ===
-You have 280 chars - that's enough to:
+=== USE YOUR CHARACTERS WISELY ===
+You have ~240 chars - that's enough to:
 - Build genuine rapport (agree, empathize, relate)
 - Share a personal experience ("I watched this last week...")
 - Explain WHY the site is good ("no account needed, just clicked and it played")
