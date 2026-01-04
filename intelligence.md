@@ -1,221 +1,282 @@
-# X.com Automation Protocol (XAP) v17.0 (Tier 1 High-CPM Focus)
-> **Target System:** X.com (Twitter)
-> **Goal:** Maximum Ad Revenue Per View (Tier 1 Countries Only)
-> **Architecture:** Hybrid Browser-Native (Userscript + Python Brain)
-> **Last Verified:** 2025-12-31
+# XBot v8.0 Intelligence Protocol
+## Million Visitor Engine - Tier 1 High-CPM Strategy
 
 ---
 
-## 🎯 TIER 1 STRATEGY (CPM-Optimized)
+## 🎯 EXECUTIVE SUMMARY
 
-### Ad Revenue Research (Dec 31, 2025)
-**OTT/CTV Streaming Website CPM Rates:**
-
-| Priority | Language | Countries | CPM (USD) | Focus % |
-|----------|----------|-----------|-----------|---------|
-| 🥇 | **English** | USA, UK, Australia, Canada, NZ | **$25-40** | 70% |
-| 🥈 | **German** | Germany, Switzerland, Austria | **$20-30** | 10% |
-| 🥉 | **French** | France, Belgium, Switzerland | **$18-25** | 8% |
-| 4 | **Dutch** | Netherlands, Belgium | **$20-25** | 6% |
-| 5 | **Nordic** | Norway, Sweden, Denmark | **$18-25** | 6% |
-
-**Excluded (Low CPM):** Korean ($10-15), Japanese ($15-20), Spanish ($8-12), Portuguese ($5-8), Indonesian ($2-5)
-
-### TMDB Regional Trending Integration
-**Strategy:** Use TMDB API to fetch trending movies/TV shows by region + language, then generate high-intent localized search terms.
-
-**Example:**
-- **Korea** → TMDB returns "흑백요리사" (Culinary Class Wars) → Search: `흑백요리사 무료 시청` → Found 5-20 high-intent users
-- **France** → TMDB returns "Miraculous Ladybug" → Search: `Miraculous regarder gratuit` → Found 5-20 high-intent users
-
-**Validation:** ✅ Tested and confirmed for France and Korea (Dec 31, 2025)
+XBot v8.0 is an advanced AI orchestration system designed to drive 1 million visitors to `streamixapp.pages.dev` through intelligent engagement on X.com. The system focuses exclusively on Tier 1 high-CPM markets (English, German, French, Dutch, Nordic) and uses sophisticated content targeting, sentiment matching, and native-language personalization.
 
 ---
 
-## 1. Tier 1 Optimized 24-Hour Rotation
-*70% English (Highest CPM), 30% European Tier 1*
+## 📊 VALIDATED MARKET DATA (December 2024)
 
-### The 24-Hour Cycle (Tier 1 Only)
-| Slot | UTC | Region | Language | CPM | Prime Time |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | 00:00-01:00 | **Los Angeles** | English | $30-40 | Evening |
-| 2 | 01:00-02:00 | **Los Angeles** | English | $30-40 | Evening |
-| 3 | 02:00-03:00 | **New York** | English | $30-40 | Night |
-| 4 | 03:00-04:00 | **New York** | English | $30-40 | Night |
-| 5 | 04:00-05:00 | **London** | English | $22-28 | Morning |
-| 6 | 05:00-06:00 | **London** | English | $22-28 | Morning |
-| 7 | 06:00-07:00 | **Sydney** | English | $25-30 | Evening |
-| 8 | 07:00-08:00 | **Sydney** | English | $25-30 | Evening |
-| 9 | 08:00-09:00 | **Paris** | French | $18-25 | Afternoon |
-| 10 | 09:00-10:00 | **Berlin** | German | $20-26 | Afternoon |
-| 11 | 10:00-11:00 | **Amsterdam** | Dutch | $20-25 | Afternoon |
-| 12 | 11:00-12:00 | **Oslo** | Norwegian | $25-32 | Afternoon |
-| 13 | 12:00-13:00 | **Stockholm** | Swedish | $18-24 | Afternoon |
-| 14 | 13:00-14:00 | **Copenhagen** | Danish | $18-24 | Afternoon |
-| 15 | 14:00-15:00 | **Berlin** | German | $20-26 | Evening |
-| 16 | 15:00-16:00 | **Paris** | French | $18-25 | Evening |
-| 17 | 16:00-17:00 | **London** | English | $22-28 | Evening |
-| 18 | 17:00-18:00 | **London** | English | $22-28 | Evening |
-| 19 | 18:00-19:00 | **New York** | English | $30-40 | Afternoon |
-| 20 | 19:00-20:00 | **New York** | English | $30-40 | Evening |
-| 21 | 20:00-21:00 | **Chicago** | English | $30-40 | Evening |
-| 22 | 21:00-22:00 | **Toronto** | English | $24-28 | Evening |
-| 23 | 22:00-23:00 | **Los Angeles** | English | $30-40 | Evening |
-| 24 | 23:00-24:00 | **Los Angeles** | English | $30-40 | Evening |
+### Language Volume Testing Results
 
-**Distribution:** 17 slots English (70%), 7 slots European Tier 1 (30%)
+| Language | Code | Daily Volume | Validated Queries |
+|----------|------|--------------|-------------------|
+| **English** | `en` | 1000+ | `recommend me a movie`, `just watched {title}`, `netflix too expensive` |
+| **German** | `de` | 300+ | `Film empfehlen lang:de`, `was schauen lang:de`, `Netflix teuer lang:de` |
+| **French** | `fr` | 200+ | `quoi regarder lang:fr`, `Avatar lang:fr`, `Netflix cher lang:fr` |
+| **Dutch** | `nl` | 150+ | `wat kijken lang:nl`, `Avatar lang:nl`, `Netflix duur lang:nl` |
+| **Nordic** | `sv/no/da` | 20-50 | `{title} lang:sv/no/da` (title-only) |
+
+### High-Intent Query Categories
+
+1. **Frustration (Highest Conversion)**
+   - `Netflix too expensive`, `Netflix teuer lang:de`, `Netflix cher lang:fr`
+   - Users actively seeking alternatives to paid services
+   
+2. **Intent (Direct Need)**
+   - `where to watch`, `kostenlos streamen lang:de`, `regarder gratuit lang:fr`
+   - Users looking for streaming solutions
+
+3. **Recommendation (High Volume)**
+   - `recommend me a movie`, `Film empfehlen lang:de`, `quoi regarder lang:fr`
+   - Users open to suggestions
+
+4. **Trending (Maximum Reach)**
+   - `{TMDB_TITLE}`, `just watched {title}`, `Avatar lang:de`
+   - High-volume discussions, great for visibility
 
 ---
 
-## 2. Each Slot: The Complete Cycle
+## 🕐 24-HOUR TIER 1 ROTATION SCHEDULE (UTC)
 
-### What Happens in Every 1-Hour Slot:
 ```
-SLOT START (e.g., 13:00 UTC = Paris):
-1. SWITCH LOCATION:
-   - Navigate: Settings > Explore > Location
-   - Search: "Paris"
-   - Select: Paris, France
-
-2. HARVEST LOCAL TRENDS:
-   - Navigate: /explore
-   - Scrape: Top 5 trends for Paris
-   - Cache: current_trends = ["#Cannes", "#Ligue1", "#CinémaFrançais"]
-
-3. SEARCH WITH NATIVE KEYWORDS:
-   - Query 1: "où regarder film gratuit"
-   - Query 2: "site streaming gratuit"
-   - Query 3: "netflix trop cher"
-   (ALL in French)
-
-4. FOR EACH CANDIDATE TWEET:
-   - De-Dup Check (skip if already replied)
-   - Intent Check (MOVIE/TV only)
-   - Draft Reply in FRENCH
-   - INJECT LOCAL TREND: "...streamixapp.pages.dev #Cannes"
-
-5. EXECUTE:
-   - Type reply (human speed)
-   - Post
-   - Log to DB
-
-6. REPEAT until slot ends (3-6 replies per slot)
+Hour | Region          | Lang | TMDB Region | Priority
+-----|-----------------|------|-------------|----------
+00   | Los Angeles     | en   | US          | HIGH
+01   | Los Angeles     | en   | US          | HIGH
+02   | New York        | en   | US          | HIGH
+03   | New York        | en   | US          | HIGH
+04   | Toronto         | en   | CA          | MEDIUM
+05   | Sydney          | en   | AU          | MEDIUM
+06   | Sydney          | en   | AU          | MEDIUM
+07   | London          | en   | GB          | HIGH
+08   | London          | en   | GB          | HIGH
+09   | Berlin          | de   | DE          | HIGH
+10   | Berlin          | de   | DE          | HIGH
+11   | Paris           | fr   | FR          | HIGH
+12   | Paris           | fr   | FR          | HIGH
+13   | Amsterdam       | nl   | NL          | MEDIUM
+14   | Stockholm       | sv   | SE          | LOW (title-only)
+15   | Berlin          | de   | DE          | HIGH
+16   | Paris           | fr   | FR          | HIGH
+17   | London          | en   | GB          | HIGH
+18   | London          | en   | GB          | HIGH
+19   | Dublin          | en   | IE          | MEDIUM
+20   | New York        | en   | US          | HIGH
+21   | Chicago         | en   | US          | HIGH
+22   | Los Angeles     | en   | US          | HIGH
+23   | Los Angeles     | en   | US          | HIGH
 ```
 
----
-
-## 3. Tier 1 Region-Language-TMDB Binding
-
-| Region | Language | TMDB Source | High-Intent Keywords | Trends Source |
-| :--- | :--- | :--- | :--- | :--- |
-| **USA/UK/AU/CA** | `en` | English trending | `watch free`, `streaming`, `where to watch` | Local trends |
-| **Germany/Switzerland/Austria** | `de` | German trending | `kostenlos schauen`, `wo schauen`, `gratis streaming` | Local trends |
-| **France/Belgium** | `fr` | French trending | `regarder gratuit`, `où regarder`, `streaming gratuit` | Local trends |
-| **Netherlands** | `nl` | Dutch trending | `gratis kijken`, `waar kijken`, `gratis streaming` | Local trends |
-| **Norway** | `no` | Norwegian trending | `se gratis`, `hvor se`, `gratis streaming` | Local trends |
-| **Sweden** | `sv` | Swedish trending | `titta gratis`, `var titta`, `gratis streaming` | Local trends |
-| **Denmark** | `da` | Danish trending | `se gratis`, `hvor se`, `gratis streaming` | Local trends |
-
-### TMDB Integration Flow:
-```
-1. Get current region from schedule (e.g., Berlin at 10:00 UTC)
-2. Fetch TMDB trending for German language:
-   - /discover/movie?with_original_language=de&sort_by=popularity.desc
-   - /discover/tv?with_original_language=de&sort_by=popularity.desc
-3. Generate search terms:
-   - "Dark kostenlos schauen"
-   - "Babylon Berlin wo schauen"
-   - "gratis streaming" (generic)
-4. Search X.com with these localized terms
-5. Reply in German with local trending hashtags
-```
+**Split: 70% English-speaking, 30% European languages**
 
 ---
 
-## 4. Keyword Sets (Tier 1 Only)
+## 🔍 SEARCH TERM TEMPLATES
 
-| Lang | High-Intent Examples | TMDB-Enhanced |
-| :--- | :--- | :--- |
-| `en` | `watch free`, `where to watch`, `streaming` | `[Movie Title] watch free` |
-| `de` | `kostenlos schauen`, `wo schauen`, `gratis streaming` | `[Movie Title] kostenlos schauen` |
-| `fr` | `regarder gratuit`, `où regarder`, `streaming gratuit` | `[Movie Title] regarder gratuit` |
-| `nl` | `gratis kijken`, `waar kijken`, `gratis streaming` | `[Movie Title] gratis kijken` |
-| `no` | `se gratis`, `hvor se`, `gratis streaming` | `[Movie Title] se gratis` |
-| `sv` | `titta gratis`, `var titta`, `gratis streaming` | `[Movie Title] titta gratis` |
-| `da` | `se gratis`, `hvor se`, `gratis streaming` | `[Movie Title] se gratis` |
-
----
-
-## 5. Trend Injection Protocol (Top 10 Hashtags)
-*Every reply includes a LOCAL TRENDING HASHTAG from the top 10.*
-
-### Per Slot:
+### English (en)
+```javascript
+trending: [
+    "{title}",
+    "just watched {title}",
+    "{title} review",
+    "watching {title}",
+    "{title} was amazing",
+]
+recommendation: [
+    "recommend me a movie",
+    "what should I watch tonight",
+    "movie recommendations",
+    "what to watch",
+    "need something to watch",
+]
+frustration: [
+    "netflix too expensive",
+    "cancel netflix",
+    "netflix sucks",
+    "tired of paying for streaming",
+]
+intent: [
+    "where to watch",
+    "free streaming",
+    "watch movies free",
+]
 ```
-1. After switching location, HARVEST top 10 trends.
-2. Store: current_trends = ["#Trend1", "#Trend2", ..., "#Trend10"]
-3. When drafting reply:
-   - Randomly select from top 10 trends
-   - Inject into reply for maximum visibility
+
+### German (de) - All with `lang:de`
+```javascript
+trending: ["{title} lang:de", "gerade gesehen {title} lang:de"]
+recommendation: ["Film empfehlen lang:de", "was schauen lang:de"]
+frustration: ["Netflix teuer lang:de", "Netflix kündigen lang:de"]
+intent: ["kostenlos streamen lang:de", "kostenlos schauen lang:de"]
 ```
 
-### Example:
-*   **Slot 9 (Paris):** User asks for free movies.
-*   **Top 10 Trends:** `["#Cannes", "#Netflix", "#Cinéma", "#Paris", ...]`
-*   **Reply:** "J'utilise streamixapp.pages.dev - qualité 4K, zéro pub. #Cannes"
+### French (fr) - All with `lang:fr`
+```javascript
+trending: ["{title} lang:fr"]
+recommendation: ["quoi regarder lang:fr", "film recommander lang:fr"]
+frustration: ["Netflix cher lang:fr"]
+intent: ["regarder gratuit lang:fr", "streaming gratuit lang:fr"]
+```
 
----
+### Dutch (nl) - All with `lang:nl`
+```javascript
+trending: ["{title} lang:nl"]
+recommendation: ["wat kijken lang:nl", "film aanbevelen lang:nl"]
+frustration: ["Netflix duur lang:nl"]
+intent: ["gratis kijken lang:nl"]
+```
 
-## 6. LLM Protocol
-```text
-CURRENT REGION: {region}
-CURRENT LANGUAGE: {lang}
-LOCAL TRENDS: {trends}
-
-Reply in {lang} ONLY. Inject one trend hashtag from {trends}.
-Sound like a native speaker.
+### Nordic (sv/no/da) - Title Only
+```javascript
+// Low general volume - only use for specific trending titles
+trending: ["{title} lang:sv", "{title} lang:no", "{title} lang:da"]
 ```
 
 ---
 
-## 7. Persistence & De-Duplication
+## 🎬 TMDB CONTENT DISCOVERY
 
-### SQLite: `xbot_memory.db`
-*   `replied_tweets`: Prevent duplicate replies.
-*   `scanned_tweets`: Track seen tweets.
-*   `trend_cache`: Store regional trends.
-*   `session_log`: Resume on restart.
+### Multi-Endpoint Strategy
 
----
+1. **`/movie/now_playing?region=XX`** - Theatrical releases (high intent)
+2. **`/discover/movie?with_original_language=XX`** - Native content
+3. **`/movie/popular`** - Global buzz
+4. **`/tv/airing_today`** - Current TV discussions
 
-## 8. Operational Parameters
-
-| Action | Value |
-| :--- | :--- |
-| Slot Duration | 1 Hour |
-| Replies Per Slot | 3-6 (rate limited) |
-| Reply Cooldown | 45-90s |
-| Max Replies/Day | ~100-150 |
-| Sentinel Check | Every 6 Hours |
+### Content Priority
+1. Now Playing (people want to watch without cinema ticket cost)
+2. Native Language (local audience preference)
+3. Trending Global (maximum reach)
+4. TV Airing (real-time conversations)
 
 ---
 
-## 9. Selectors
+## 🧠 AI ORCHESTRATOR PROTOCOL
 
-| Component | Selector |
-| :--- | :--- |
-| Search | `[data-testid="SearchBox_Search_Input"]` |
-| Explore | `a[href="/explore"]` |
-| Trend | `[data-testid="trend"]` |
-| Settings | `a[aria-label="Settings"][href="/settings/explore"]` |
-| Location Search | `input[placeholder="Search locations"]` |
-| Location Result | `button[role="button"]` |
-| Tweet | `article[data-testid="tweet"]` |
-| Reply | `[data-testid="reply"]` |
-| Post | `[data-testid="tweetButton"]` |
-| Text Area | `[data-testid="tweetTextarea_0"]` |
+### Sentiment Detection & Matching
+
+| Detected Sentiment | Bot Response Strategy |
+|-------------------|----------------------|
+| **Frustrated** | Empathize first, then offer solution |
+| **Excited** | Match energy, join enthusiasm |
+| **Seeking** | Be helpful and direct |
+| **Neutral** | Casual and friendly |
+
+### Context Analysis Inputs
+- Tweet text
+- Parent tweet (if reply)
+- Thread replies (up to 3)
+- User bio (interests)
+- Search category (frustration/intent/recommendation/trending)
+
+### Reply Rules
+1. MAX 180 characters
+2. ALWAYS include `streamixapp.pages.dev`
+3. NEVER mention competitor names
+4. Include ONE trending hashtag
+5. Use native language slang/phrases
+6. Match tweet sentiment
+
+### Native Language Phrases
+
+**English:**
+- Check: "check out", "try", "use"
+- Good: "fire", "solid", "goated", "legit"
+- React: "fr", "ngl", "tbh", "lowkey"
+
+**German:**
+- Check: "schau mal auf", "probier"
+- Good: "mega", "geil", "krass", "nice"
+- React: "echt", "safe"
+
+**French:**
+- Check: "regarde sur", "essaie"
+- Good: "trop bien", "génial", "ouf"
+- React: "franchement", "grave"
+
+**Dutch:**
+- Check: "kijk op", "probeer"
+- Good: "vet", "chill", "top"
+- React: "echt", "serieus"
 
 ---
 
-## 10. Content Policy
-*   **YES:** Movies, TV Shows, Anime, KDrama.
-*   **NO:** Live Sports, Politics, Crypto, Adult.
+## 📈 CONVERSION FUNNEL (WITH X PREMIUM)
+
+```
+Daily Targetable Posts:     1,700
+├── Bot replies to:         800/day (quality focus)
+│   ├── Impressions/reply:  150-200 (Premium boost)
+│   │   └── Daily Impressions: 120,000 - 160,000
+│   │       ├── CTR (AI personalized): 5-10%
+│   │       │   └── Daily Clicks: 6,000 - 16,000
+│   │       │       └── MONTHLY: 180,000 - 480,000
+```
+
+### Path to 1 Million
+
+| Accounts | Monthly Visitors | Time to 1M |
+|----------|-----------------|------------|
+| 1 Premium | 300,000 | 4 months |
+| 2 Premium | 600,000 | 2 months |
+| 3 Premium | 900,000 | 5-6 weeks |
+
+---
+
+## ⚙️ OPERATIONAL PARAMETERS
+
+```javascript
+CONFIG = {
+    MAIN_LOOP_INTERVAL: 45000,      // 45 seconds between scans
+    REPLY_COOLDOWN: 75000,          // 75 seconds between replies
+    KEYWORD_ROTATE_INTERVAL: 300000, // 5 minutes
+    TREND_HARVEST_INTERVAL: 1800000, // 30 minutes
+    LOCATION_SWITCH_COOLDOWN: 3600000, // 1 hour
+    MAX_REPLIES_PER_HOUR: 6,
+    MAX_REPLIES_PER_DAY: 100,
+}
+```
+
+---
+
+## 🚀 DEPLOYMENT
+
+### Start Server
+```bash
+cd c:\Users\VASU\Desktop\xbot\active
+uvicorn server:app --reload --port 8000
+```
+
+### Install Client
+1. Install Tampermonkey browser extension
+2. Create new script
+3. Copy contents of `xbot_client.js`
+4. Save and enable
+
+### Endpoints
+- `GET /` - Health check
+- `GET /schedule` - Current region/language
+- `GET /smart-search` - Get next search term
+- `POST /analyze` - Analyze tweet & get reply
+- `POST /update-trends` - Store harvested trends
+- `GET /stats` - Performance statistics
+- `GET /regional-content` - Current TMDB trending
+
+---
+
+## 📊 VERSION HISTORY
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 8.0 | 2024-12-31 | Million Visitor Engine, Tier 1 focus, validated lang: operators, sentiment matching, thread context |
+| 7.1 | 2024-12-30 | Language-aware targeting, lang: filter fix |
+| 7.0 | 2024-12-29 | TMDB integration, smart search |
+
+---
+
+*Last Updated: December 31, 2024*

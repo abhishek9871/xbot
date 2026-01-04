@@ -1,8 +1,11 @@
 """
-XBot Brain Server v1.0
-======================
-The Python "Brain" for the X.com Automation Bot.
-Implements: Groq LLM, SQLite Persistence, Region Rotation, Language Binding.
+XBot Brain Server v8.0 - MILLION VISITOR ENGINE
+=================================================
+Advanced AI Orchestrator for X.com Automation
+- TIER 1 ONLY: High-CPM Languages (EN, DE, FR, NL, Nordic)
+- Multi-Endpoint TMDB: now_playing, discover, popular, airing_today
+- Sophisticated LLM: Context-aware, sentiment-matched, personalized replies
+- Validated lang:XX search operators for precise targeting
 
 Run: uvicorn server:app --reload --port 8000
 """
@@ -12,7 +15,7 @@ import json
 import sqlite3
 import random
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 
@@ -26,10 +29,8 @@ from dotenv import load_dotenv
 # CONFIGURATION
 # ============================================================================
 
-# Load environment variables
 load_dotenv()
 
-# --- Configurations ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 TMDB_API_KEY = "61d95006877f80fb61358dbb78f153c3"
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
@@ -37,70 +38,333 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 if not GROQ_API_KEY:
     print("WARNING: GROQ_API_KEY not found in environment variables!")
 
-GROQ_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 DATABASE_PATH = "xbot_memory.db"
 SITE_URL = "streamixapp.pages.dev"
 
 # ============================================================================
-# REGION-LANGUAGE CONFIGURATION (From intelligence.md v16.0)
+# TIER 1 HIGH-CPM CONFIGURATION (Validated 2025-01-01)
 # ============================================================================
 
-# 24-Hour Daily Rotation Schedule (UTC)
-DAILY_SCHEDULE = [
-    {"hour": 0, "region": "Los Angeles", "lang": "en", "location": "Los Angeles"},
-    {"hour": 1, "region": "Mexico City", "lang": "es", "location": "Mexico City"},
-    {"hour": 2, "region": "Lima", "lang": "es", "location": "Lima"},
-    {"hour": 3, "region": "Buenos Aires", "lang": "es", "location": "Buenos Aires"},
-    {"hour": 4, "region": "São Paulo", "lang": "pt", "location": "São Paulo"},
-    {"hour": 5, "region": "Rio de Janeiro", "lang": "pt", "location": "Rio de Janeiro"},
-    {"hour": 6, "region": "Sydney", "lang": "en", "location": "Sydney"},
-    {"hour": 7, "region": "Melbourne", "lang": "en", "location": "Melbourne"},
-    {"hour": 8, "region": "Tokyo", "lang": "ja", "location": "Tokyo"},
-    {"hour": 9, "region": "Seoul", "lang": "ko", "location": "Seoul"},
-    {"hour": 10, "region": "Jakarta", "lang": "id", "location": "Jakarta"},
-    {"hour": 11, "region": "Singapore", "lang": "en", "location": "Singapore"},
-    {"hour": 12, "region": "Paris", "lang": "fr", "location": "Paris"},
-    {"hour": 13, "region": "Amsterdam", "lang": "nl", "location": "Amsterdam"},
-    {"hour": 14, "region": "Berlin", "lang": "de", "location": "Berlin"},
-    {"hour": 15, "region": "Warsaw", "lang": "pl", "location": "Warsaw"},
-    {"hour": 16, "region": "Rome", "lang": "it", "location": "Rome"},
-    {"hour": 17, "region": "Madrid", "lang": "es", "location": "Madrid"},
-    {"hour": 18, "region": "Lisbon", "lang": "pt", "location": "Lisbon"},
-    {"hour": 19, "region": "London", "lang": "en", "location": "London"},
-    {"hour": 20, "region": "Dublin", "lang": "en", "location": "Dublin"},
-    {"hour": 21, "region": "Toronto", "lang": "en", "location": "Toronto"},
-    {"hour": 22, "region": "New York", "lang": "en", "location": "New York"},
-    {"hour": 23, "region": "Chicago", "lang": "en", "location": "Chicago"},
-]
-
-# Native Language Keywords
-KEYWORDS = {
-    "en": ['"where to watch" free', '"best free streaming" site', '"netflix separate" free', '"streaming site" no ads'],
-    "fr": ['"où regarder" film gratuit', '"site streaming gratuit"', '"alternative netflix gratuit"'],
-    "de": ['"wo kann ich schauen" kostenlos', '"streaming seite kostenlos"'],
-    "es": ['"dónde ver" películas gratis', '"sitio streaming gratis"'],
-    "pt": ['"onde assistir" filme grátis', '"site streaming grátis"'],
-    "it": ['"dove guardare" film gratis', '"sito streaming gratuito"'],
-    "nl": ['"waar kijken" gratis', '"gratis streaming site"'],
-    "pl": ['"gdzie oglądać" za darmo', '"darmowy streaming"'],
-    "ja": ["映画 無料 視聴", "無料 ストリーミング サイト"],
-    "ko": ["영화 무료 보기", "무료 스트리밍 사이트"],
-    "id": ["nonton film gratis", "situs streaming gratis"],
+# Language-specific search term templates (MAXIMUM COVERAGE for movie/TV lovers)
+SEARCH_TEMPLATES = {
+    "en": {
+        "trending": [
+            "where can I watch {title}",
+            "how to watch {title} free",
+            "{title} streaming",
+            "watch {title} online",
+        ],
+        "viral_lists": [
+            # === MOVIES 2025 & 2025 ===
+            "top movies 2025", "top movies 2025",
+            "best movies 2025", "best movies 2025",
+            "best movies January 2025", "best movies December 2025",
+            "upcoming movies 2025", "upcoming movies 2025",
+            "most anticipated movies 2025", "most anticipated movies",
+            "new movie releases 2025", "new movie releases",
+            "movies coming out soon", "movies releasing this month",
+            "top 10 movies 2025", "top 10 movies 2025",
+            "biggest movies 2025", "box office 2025",
+            
+            # === TV SHOWS 2025 & 2025 ===
+            "best tv shows 2025", "best tv shows 2025",
+            "top tv shows 2025", "top tv shows 2025",
+            "new series 2025", "new series 2025",
+            "best new shows", "upcoming tv shows",
+            "tv show recommendations", "shows to watch 2025",
+            "must watch tv shows", "trending tv shows",
+            
+            # === AWARD SEASON (MASSIVE ENGAGEMENT!) ===
+            "Oscar nominations 2025", "Oscar predictions",
+            "best picture nominees", "Oscar winners",
+            "Golden Globe nominations", "Golden Globe winners",
+            "Emmy nominations 2025", "Emmy winners",
+            "SAG awards", "BAFTA nominations",
+            "award season movies", "Oscar worthy",
+            
+            # === GENRES (DEDICATED FAN BASES) ===
+            # Horror
+            "best horror movies 2025", "best horror movies 2025",
+            "scary movies to watch", "horror movie recommendations",
+            "new horror movies", "horror films",
+            # Comedy
+            "best comedy movies 2025", "funny movies to watch",
+            "comedy movie recommendations", "hilarious movies",
+            # Action
+            "best action movies 2025", "action movies to watch",
+            "new action movies", "action film recommendations",
+            # Romance
+            "best romantic movies", "romance movies to watch",
+            "romantic comedies", "love story movies",
+            # Thriller
+            "best thriller movies 2025", "thriller recommendations",
+            "suspense movies", "psychological thriller",
+            # Sci-Fi
+            "best sci-fi movies 2025", "science fiction movies",
+            "space movies", "sci-fi recommendations",
+            # Drama
+            "best drama movies 2025", "drama recommendations",
+            "emotional movies", "critically acclaimed movies",
+            
+            # === FRANCHISES (MARVEL, DC, STAR WARS = HUGE!) ===
+            "Marvel movies 2025", "MCU phase 7",
+            "Marvel upcoming movies", "Avengers movies",
+            "DC movies 2025", "DC upcoming movies",
+            "Batman movies", "Superman movies",
+            "Star Wars streaming", "Star Wars movies",
+            "Harry Potter series", "Wizarding World",
+            "Lord of the Rings", "Dune movies",
+            
+            # === K-DRAMA / INTERNATIONAL (EXPLOSIVE GROWTH) ===
+            "best kdrama 2025", "best kdrama 2025",
+            "korean drama recommendations", "kdrama to watch",
+            "new kdrama", "top kdrama",
+            "spanish shows", "spanish movies",
+            "foreign films to watch", "international movies",
+            "bollywood movies 2025", "hindi movies",
+            "japanese movies", "french films",
+            
+            # === ANIME ===
+            "best anime 2025", "best anime 2025",
+            "top anime 2025", "new anime 2025",
+            "anime recommendations", "anime to watch",
+            "where to watch anime", "anime streaming",
+            "anime movies", "best anime movies",
+            
+            # === MOODS / EMOTIONS (HIGH INTENT!) ===
+            "feel good movies", "comfort movies",
+            "movies to watch when bored", "weekend movie",
+            "date night movies", "rainy day movies",
+            "sad movies to cry", "emotional movies to watch",
+            "uplifting movies", "inspiring movies",
+            "movies to watch alone", "late night movies",
+            
+            # === STREAMING NEWS (PERFECT TIMING!) ===
+            "leaving netflix this month", "new on netflix",
+            "new on disney plus", "coming to hbo max",
+            "what's new on streaming", "streaming this week",
+            "new releases streaming", "just added netflix",
+            
+            # === DOCUMENTARIES ===
+            "best documentaries 2025", "best documentaries 2025",
+            "documentary recommendations", "documentaries to watch",
+            "true crime documentary", "nature documentary",
+            "new documentaries", "must watch documentaries",
+            
+            # === FAMILY / KIDS ===
+            "family movies to watch", "family movie night",
+            "kids movies 2025", "movies for kids",
+            "animated movies 2025", "best animated movies",
+            "disney movies", "pixar movies",
+            
+            # === BINGE CULTURE ===
+            "what to binge", "binge worthy shows",
+            "shows to binge", "binge watch recommendations",
+            "weekend binge", "what to marathon",
+            "addictive tv shows", "shows you can't stop watching",
+        ],
+        "recommendation": [
+            "what movie should I watch tonight",
+            "recommend me something to watch",
+            "I need a good movie to watch",
+            "what are you watching tonight",
+            "looking for something to binge",
+            "any good shows to watch",
+            "movie night suggestions",
+            "what should I watch",
+            "show recommendations",
+            "movie recommendations",
+            "suggest me a movie",
+            "what to watch next",
+        ],
+        "frustration": [
+            # Netflix
+            "netflix is too expensive", "canceling my netflix subscription",
+            "sick of paying for netflix", "netflix sucks",
+            # Disney+
+            "disney plus too expensive", "canceling disney plus",
+            "disney plus not worth it", "disney plus sucks",
+            # HBO Max
+            "hbo max too expensive", "canceling hbo max",
+            "hbo max not worth it", "max subscription",
+            # Hulu
+            "hulu too expensive", "canceling hulu",
+            "hulu ads annoying", "hulu not worth it",
+            # Amazon Prime
+            "prime video not worth it", "amazon prime expensive",
+            # Peacock
+            "peacock not worth it", "peacock sucks",
+            # Apple TV+
+            "apple tv not worth it", "apple tv expensive",
+            # General streaming frustration
+            "tired of paying for streaming services",
+            "streaming services are a rip off",
+            "too many streaming subscriptions",
+            "can't afford streaming anymore",
+            "subscription fatigue", "streaming is getting expensive",
+            "hate paying for streaming", "streaming bubble",
+        ],
+        "intent": [
+            "where to stream movies for free",
+            "free movie streaming sites",
+            "watch movies without subscription",
+            "free alternative to netflix",
+            "sites like netflix but free",
+            "how to watch movies for free",
+            "best free streaming sites",
+            "watch films online free",
+            "free tv show streaming",
+            "watch anime free",
+            "free streaming no ads",
+            "stream movies free online",
+            "watch shows for free",
+            "free 4k streaming",
+        ],
+    },
+    "de": {
+        "trending": [
+            "{title} lang:de",
+            "gerade gesehen {title} lang:de",
+            "{title} Film lang:de",
+        ],
+        "recommendation": [
+            "Film empfehlen lang:de",
+            "was schauen lang:de",
+            "was soll ich schauen lang:de",
+        ],
+        "frustration": [
+            "Netflix teuer lang:de",
+            "Netflix kündigen lang:de",
+        ],
+        "intent": [
+            "kostenlos streamen lang:de",
+            "kostenlos schauen lang:de",
+            "gratis Film lang:de",
+        ],
+    },
+    "fr": {
+        "trending": [
+            "{title} lang:fr",
+            "regardé {title} lang:fr",
+        ],
+        "recommendation": [
+            "quoi regarder lang:fr",
+            "film recommander lang:fr",
+            "conseiller film lang:fr",
+        ],
+        "frustration": [
+            "Netflix cher lang:fr",
+            "annuler Netflix lang:fr",
+        ],
+        "intent": [
+            "regarder gratuit lang:fr",
+            "streaming gratuit lang:fr",
+        ],
+    },
+    "nl": {
+        "trending": [
+            "{title} lang:nl",
+        ],
+        "recommendation": [
+            "wat kijken lang:nl",
+            "film aanbevelen lang:nl",
+        ],
+        "frustration": [
+            "Netflix duur lang:nl",
+            "Netflix opzeggen lang:nl",
+        ],
+        "intent": [
+            "gratis kijken lang:nl",
+        ],
+    },
+    # Nordic languages - TITLE ONLY (low general volume, validated)
+    "sv": {"trending": ["{title} lang:sv"]},
+    "no": {"trending": ["{title} lang:no"]},
+    "da": {"trending": ["{title} lang:da"]},
 }
 
-# Language Names for LLM
+# Tier 1 High-CPM 24-Hour Schedule (70% English, 30% European)
+# Prioritizes peak hours in each region for maximum engagement
+DAILY_SCHEDULE = [
+    # US Prime Time (Evening hours in US = High engagement)
+    {"hour": 0, "region": "Los Angeles", "lang": "en", "location": "Los Angeles", "tmdb_region": "US"},
+    {"hour": 1, "region": "Los Angeles", "lang": "en", "location": "Los Angeles", "tmdb_region": "US"},
+    {"hour": 2, "region": "New York", "lang": "en", "location": "New York", "tmdb_region": "US"},
+    {"hour": 3, "region": "New York", "lang": "en", "location": "New York", "tmdb_region": "US"},
+    {"hour": 4, "region": "Toronto", "lang": "en", "location": "Toronto", "tmdb_region": "CA"},
+    
+    # Australia/NZ Morning
+    {"hour": 5, "region": "Sydney", "lang": "en", "location": "Sydney", "tmdb_region": "AU"},
+    {"hour": 6, "region": "Sydney", "lang": "en", "location": "Sydney", "tmdb_region": "AU"},
+    
+    # UK Morning
+    {"hour": 7, "region": "London", "lang": "en", "location": "London", "tmdb_region": "GB"},
+    {"hour": 8, "region": "London", "lang": "en", "location": "London", "tmdb_region": "GB"},
+    
+    # European Peak (Morning/Lunch in Europe)
+    {"hour": 9, "region": "Berlin", "lang": "de", "location": "Berlin", "tmdb_region": "DE"},
+    {"hour": 10, "region": "Berlin", "lang": "de", "location": "Berlin", "tmdb_region": "DE"},
+    {"hour": 11, "region": "Paris", "lang": "fr", "location": "Paris", "tmdb_region": "FR"},
+    {"hour": 12, "region": "Paris", "lang": "fr", "location": "Paris", "tmdb_region": "FR"},
+    {"hour": 13, "region": "Amsterdam", "lang": "nl", "location": "Amsterdam", "tmdb_region": "NL"},
+    
+    # Nordic Slot (Title-only targeting)
+    {"hour": 14, "region": "Stockholm", "lang": "sv", "location": "Stockholm", "tmdb_region": "SE"},
+    
+    # Back to European Evening
+    {"hour": 15, "region": "Berlin", "lang": "de", "location": "Berlin", "tmdb_region": "DE"},
+    {"hour": 16, "region": "Paris", "lang": "fr", "location": "Paris", "tmdb_region": "FR"},
+    
+    # UK Evening Prime Time
+    {"hour": 17, "region": "London", "lang": "en", "location": "London", "tmdb_region": "GB"},
+    {"hour": 18, "region": "London", "lang": "en", "location": "London", "tmdb_region": "GB"},
+    {"hour": 19, "region": "Dublin", "lang": "en", "location": "Dublin", "tmdb_region": "IE"},
+    
+    # US Day/Afternoon
+    {"hour": 20, "region": "New York", "lang": "en", "location": "New York", "tmdb_region": "US"},
+    {"hour": 21, "region": "Chicago", "lang": "en", "location": "Chicago", "tmdb_region": "US"},
+    {"hour": 22, "region": "Los Angeles", "lang": "en", "location": "Los Angeles", "tmdb_region": "US"},
+    {"hour": 23, "region": "Los Angeles", "lang": "en", "location": "Los Angeles", "tmdb_region": "US"},
+]
+
+# Language display names
 LANG_NAMES = {
     "en": "English",
-    "fr": "French",
     "de": "German",
-    "es": "Spanish",
-    "pt": "Portuguese",
-    "it": "Italian",
+    "fr": "French",
     "nl": "Dutch",
-    "pl": "Polish",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "id": "Indonesian",
+    "sv": "Swedish",
+    "no": "Norwegian",
+    "da": "Danish",
+}
+
+# Native language phrases for authentic replies
+NATIVE_PHRASES = {
+    "en": {
+        "check_it": ["check out", "try", "use", "go to"],
+        "good": ["fire", "solid", "clean", "goated", "legit"],
+        "reaction": ["fr", "ngl", "tbh", "lowkey", "deadass"],
+        "emoji": ["🔥", "💯", "👀", "🎬", "✨"],
+    },
+    "de": {
+        "check_it": ["schau mal auf", "probier", "geh zu"],
+        "good": ["mega", "geil", "krass", "nice"],
+        "reaction": ["echt", "ehrlich", "safe"],
+        "emoji": ["🔥", "💯", "👀", "🎬"],
+    },
+    "fr": {
+        "check_it": ["regarde sur", "essaie", "va sur"],
+        "good": ["trop bien", "génial", "ouf", "dingue"],
+        "reaction": ["franchement", "sérieux", "grave"],
+        "emoji": ["🔥", "💯", "👀", "🎬"],
+    },
+    "nl": {
+        "check_it": ["kijk op", "probeer", "ga naar"],
+        "good": ["vet", "chill", "top", "lekker"],
+        "reaction": ["echt", "serieus"],
+        "emoji": ["🔥", "💯", "👀", "🎬"],
+    },
 }
 
 # ============================================================================
@@ -120,7 +384,9 @@ def init_database():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             region TEXT,
             language TEXT,
-            reply_text TEXT
+            reply_text TEXT,
+            search_term TEXT,
+            sentiment TEXT
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_handle ON replied_tweets(user_handle)")
@@ -144,43 +410,57 @@ def init_database():
         )
     """)
     
-    # Session log table
+    # Regional content cache (TMDB)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS session_log (
+        CREATE TABLE IF NOT EXISTS regional_content (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_region TEXT,
-            last_keyword_index INTEGER DEFAULT 0,
-            replies_sent INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'RUNNING'
+            region TEXT,
+            lang_code TEXT,
+            content_type TEXT,
+            title TEXT,
+            original_title TEXT,
+            tmdb_id INTEGER,
+            year TEXT,
+            popularity REAL,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(region, tmdb_id)
         )
     """)
-
-    # --- NEW TABLES FOR SMART SEARCH ---
     
-    # Search Term Pool (Stores generated high-intent terms)
+    # Search term pool
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS search_term_pool (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            term TEXT UNIQUE,
-            tmdb_id INTEGER,
-            content_type TEXT,
+            term TEXT,
+            lang_code TEXT,
+            category TEXT,
             title TEXT,
-            year TEXT,
+            tmdb_id INTEGER,
             popularity REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_used_at TIMESTAMP,
             use_count INTEGER DEFAULT 0,
-            success_count INTEGER DEFAULT 0
+            reply_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(term, lang_code)
         )
     """)
     
-    # TMDB Cache (Stores raw TMDB results to save API calls)
+    # TMDB cache
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tmdb_cache (
             endpoint TEXT PRIMARY KEY,
             data TEXT,
             fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Session log
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            replies_sent INTEGER DEFAULT 0,
+            impressions_estimated INTEGER DEFAULT 0
         )
     """)
     
@@ -198,7 +478,7 @@ def get_db():
         conn.close()
 
 # ============================================================================
-# TMDB CLIENT
+# ADVANCED TMDB CLIENT (Multi-Endpoint Regional)
 # ============================================================================
 
 class TMDBClient:
@@ -206,10 +486,10 @@ class TMDBClient:
         self.api_key = TMDB_API_KEY
         self.base_url = TMDB_BASE_URL
         
-    def _get(self, endpoint: str, params: Dict = None) -> Optional[Dict]:
+    def _get(self, endpoint: str, params: Dict = None, cache_hours: int = 12) -> Optional[Dict]:
         """Make GET request to TMDB with caching."""
-        # Check cache first
         cache_key = f"{endpoint}:{json.dumps(params, sort_keys=True)}" if params else endpoint
+        
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT data, fetched_at FROM tmdb_cache WHERE endpoint = ?", (cache_key,))
@@ -217,26 +497,26 @@ class TMDBClient:
             
             if row:
                 fetched_at = datetime.fromisoformat(row["fetched_at"])
-                # Cache valid for 24 hours
-                if datetime.utcnow() - fetched_at < timedelta(hours=24):
+                # Handle both tz-aware and tz-naive datetimes
+                if fetched_at.tzinfo is None:
+                    fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - fetched_at < timedelta(hours=cache_hours):
                     return json.loads(row["data"])
         
-        # Fetch from API
         if not params:
             params = {}
         params["api_key"] = self.api_key
         
         try:
-            response = requests.get(f"{self.base_url}{endpoint}", params=params)
+            response = requests.get(f"{self.base_url}{endpoint}", params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
             
-            # Save to cache
             with get_db() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT OR REPLACE INTO tmdb_cache (endpoint, data, fetched_at) VALUES (?, ?, ?)",
-                    (cache_key, json.dumps(data), datetime.utcnow().isoformat())
+                    (cache_key, json.dumps(data), datetime.now(timezone.utc).isoformat())
                 )
                 conn.commit()
             
@@ -245,199 +525,397 @@ class TMDBClient:
             print(f"TMDB API Error: {e}")
             return None
 
-    def get_trending_movies(self) -> List[Dict]:
+    def get_now_playing(self, region: str = "US") -> List[Dict]:
+        """Get movies currently in theaters for a region."""
+        data = self._get("/movie/now_playing", {"region": region, "language": "en-US"})
+        return data.get("results", [])[:10] if data else []
+    
+    def get_native_content(self, lang_code: str) -> List[Dict]:
+        """Get popular content in native language."""
+        lang_map = {"de": "de", "fr": "fr", "nl": "nl", "sv": "sv", "no": "no", "da": "da"}
+        original_lang = lang_map.get(lang_code)
+        
+        if not original_lang:
+            return []
+        
+        data = self._get("/discover/movie", {
+            "with_original_language": original_lang,
+            "sort_by": "popularity.desc",
+            "vote_count.gte": 10,
+        })
+        return data.get("results", [])[:10] if data else []
+    
+    def get_trending_global(self) -> List[Dict]:
+        """Get globally trending movies."""
         data = self._get("/trending/movie/day")
-        return data.get("results", []) if data else []
-
-    def get_trending_tv(self) -> List[Dict]:
-        data = self._get("/trending/tv/day")
-        return data.get("results", []) if data else []
-
-    def get_popular_movies(self) -> List[Dict]:
-        data = self._get("/movie/popular")
-        return data.get("results", []) if data else []
+        return data.get("results", [])[:15] if data else []
+    
+    def get_airing_today(self, lang_code: str = "en") -> List[Dict]:
+        """Get TV shows airing today."""
+        timezone_map = {
+            "en": "America/New_York",
+            "de": "Europe/Berlin",
+            "fr": "Europe/Paris",
+            "nl": "Europe/Amsterdam",
+        }
+        tz = timezone_map.get(lang_code, "America/New_York")
+        data = self._get("/tv/airing_today", {"timezone": tz})
+        return data.get("results", [])[:10] if data else []
+    
+    def get_regional_content(self, region: str, lang_code: str) -> List[Dict]:
+        """Get comprehensive regional content (combines all endpoints)."""
+        content = []
+        
+        # 1. Now Playing (theatrical releases - high intent)
+        now_playing = self.get_now_playing(region)
+        for m in now_playing:
+            content.append({
+                "title": m.get("title"),
+                "tmdb_id": m.get("id"),
+                "type": "movie",
+                "source": "now_playing",
+                "popularity": m.get("popularity", 0),
+                "year": (m.get("release_date") or "")[:4],
+            })
+        
+        # 2. Native language content (for non-English)
+        if lang_code != "en":
+            native = self.get_native_content(lang_code)
+            for m in native:
+                content.append({
+                    "title": m.get("title"),
+                    "original_title": m.get("original_title"),
+                    "tmdb_id": m.get("id"),
+                    "type": "movie",
+                    "source": "native",
+                    "popularity": m.get("popularity", 0),
+                    "year": (m.get("release_date") or "")[:4],
+                })
+        
+        # 3. Global trending
+        trending = self.get_trending_global()
+        for m in trending:
+            content.append({
+                "title": m.get("title"),
+                "tmdb_id": m.get("id"),
+                "type": "movie",
+                "source": "trending",
+                "popularity": m.get("popularity", 0),
+                "year": (m.get("release_date") or "")[:4],
+            })
+        
+        # 4. TV Airing today
+        tv = self.get_airing_today(lang_code)
+        for t in tv:
+            content.append({
+                "title": t.get("name"),
+                "tmdb_id": t.get("id"),
+                "type": "tv",
+                "source": "airing",
+                "popularity": t.get("popularity", 0),
+                "year": (t.get("first_air_date") or "")[:4],
+            })
+        
+        # Deduplicate by tmdb_id
+        seen = set()
+        unique_content = []
+        for c in content:
+            if c["tmdb_id"] not in seen:
+                seen.add(c["tmdb_id"])
+                unique_content.append(c)
+        
+        # Sort by popularity
+        unique_content.sort(key=lambda x: x["popularity"], reverse=True)
+        
+        return unique_content
 
 # ============================================================================
-# SMART SEARCH LOGIC
+# SMART SEARCH v8.0 (Validated Search Terms)
 # ============================================================================
 
 class SmartSearch:
     def __init__(self):
         self.tmdb = TMDBClient()
+        self.groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+        self.ai_terms_cache = []
+        self.last_ai_generation = None
+    
+    def generate_ai_search_terms(self) -> List[str]:
+        """Use AI to generate creative, high-value search terms that attract movie/TV lovers."""
+        if not self.groq_client:
+            return []
         
-    def generate_search_terms(self):
-        """Fetch trending content and populate search term pool."""
-        movies = self.tmdb.get_trending_movies()
-        tv_shows = self.tmdb.get_trending_tv()
+        # Only regenerate every 30 minutes
+        if self.last_ai_generation and (datetime.now(timezone.utc) - self.last_ai_generation).seconds < 1800:
+            return self.ai_terms_cache
+        
+        prompt = """Generate 50 unique X.com (Twitter) search queries that will find posts from MOVIE and TV SHOW LOVERS.
+
+RULES:
+- Each term should attract people discussing movies, TV shows, or streaming
+- Be CREATIVE and VARIED - cover ALL categories below
+- Focus on 2025 content and timeless queries (NOT 2025 - it just started)
+- NO frustration terms like "netflix expensive" - these yield old posts
+
+=== MANDATORY CATEGORIES (INCLUDE AT LEAST 2 FROM EACH) ===
+
+1. MOVIES 2025:
+   "best movies 2025", "top movies 2025", "most anticipated movies 2025"
+   "movies releasing 2025", "upcoming movies", "new movies"
+
+2. TV SHOWS 2025:
+   "best tv shows 2025", "new series 2025", "top shows 2025"
+   "must watch series", "best new shows", "trending tv shows"
+
+3. AWARD SEASON:
+   "Oscar nominations", "Oscar predictions", "Golden Globe winners"
+   "Emmy nominations", "best picture nominees", "award season movies"
+
+4. ALL GENRES:
+   "best horror movies 2025", "top thriller movies", "best comedy films"
+   "best action movies 2025", "romantic movies to watch", "sci-fi movies"
+   "best drama movies", "psychological thrillers", "scary movies 2025"
+
+5. FRANCHISES (VERY IMPORTANT!):
+   "Marvel movies", "MCU", "Avengers movies"
+   "DC movies", "Batman movies", "Superman movies"
+   "Star Wars movies", "Harry Potter series", "Lord of the Rings"
+   "Dune movies", "Fast and Furious", "Mission Impossible"
+
+6. K-DRAMA & INTERNATIONAL:
+   "best kdrama 2025", "korean drama recommendations", "top kdrama"
+   "spanish shows to watch", "bollywood movies 2025", "japanese movies"
+   "french films", "international movies", "foreign films to watch"
+
+7. ANIME (HUGE AUDIENCE!):
+   "best anime 2025", "top anime", "new anime releases"
+   "anime recommendations", "anime movies", "best anime movies"
+
+8. MOODS & EMOTIONS:
+   "feel good movies", "comfort movies to watch", "sad movies to cry"
+   "date night movies", "weekend movies", "movies to watch when bored"
+   "uplifting movies", "mind-bending movies", "inspiring films"
+
+9. STREAMING NEWS:
+   "new on Netflix", "leaving Netflix this month", "new on Disney Plus"
+   "coming to HBO Max", "streaming this week", "what to watch this weekend"
+
+10. DOCUMENTARIES:
+    "best documentaries 2025", "true crime documentaries", "nature documentaries"
+    "documentary recommendations", "must watch documentaries"
+
+11. FAMILY & KIDS:
+    "family movies", "kids movies", "animated movies 2025"
+    "Disney movies", "Pixar movies", "best animated films"
+
+12. BINGE CULTURE:
+    "shows to binge", "binge worthy shows", "what to binge watch"
+    "addictive tv shows", "shows you cant stop watching"
+
+13. ACTORS (USE FAMOUS NAMES!):
+    "best [Timothee Chalamet/Zendaya/Tom Holland/Sydney Sweeney/etc] movies"
+    "top 10 [Leonardo DiCaprio/Margot Robbie/etc] performances"
+
+14. DIRECTORS:
+    "Christopher Nolan movies", "Tarantino best films", "Denis Villeneuve movies"
+    "Greta Gerwig films", "Jordan Peele movies"
+
+15. DECADES:
+    "best 90s movies", "80s horror movies", "2000s classic films"
+    "nostalgic movies", "childhood movies"
+
+Return ONLY a JSON array of 50 search terms, nothing else. Be diverse!
+Example: ["best Zendaya movies", "top anime 2025", "Oscar predictions", "Marvel movies", ...]"""
+
+        try:
+            response = self.groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.9,  # High creativity
+                max_tokens=2000,  # Increased for 50 terms
+            )
+            
+            result = response.choices[0].message.content.strip()
+            # Parse JSON array
+            import json
+            if result.startswith("["):
+                terms = json.loads(result)
+                self.ai_terms_cache = terms
+                self.last_ai_generation = datetime.now(timezone.utc)
+                print(f"[AI Search] Generated {len(terms)} creative search terms")
+                return terms
+        except Exception as e:
+            print(f"[AI Search] Error generating terms: {e}")
+        
+        return []
+        
+    def generate_search_terms(self, lang_code: str, region: str) -> int:
+        """Generate validated search terms for a specific language."""
+        templates = SEARCH_TEMPLATES.get(lang_code, SEARCH_TEMPLATES["en"])
+        content = self.tmdb.get_regional_content(region, lang_code)
         
         new_terms = 0
         
         with get_db() as conn:
             cursor = conn.cursor()
             
-            # Process Movies - EXPANDED CATEGORIES
-            for m in movies:
-                title = m.get("title")
-                year = m.get("release_date", "")[:4]
-                if not title: continue
-                
-                # Category 1: Direct Intent (High conversion)
-                direct_intent = [
-                    f'"{title}" watch free',
-                    f'"{title}" streaming',
-                    f'where to watch "{title}"',
-                    f'"{title}" online free',
-                    f'"{title}" {year} stream',
-                    f'"{title}" full movie',
-                ]
-                
-                # Category 2: Movie Discussion (High volume)
-                discussion = [
-                    f'just watched {title}',
-                    f'{title} was amazing',
-                    f'{title} movie',
-                    f'watching {title}',
-                ]
-                
-                # Category 3: Frustration (High intent)
-                frustration = [
-                    f"can't find {title}",
-                    f'{title} not on netflix',
-                    f'{title} removed',
-                ]
-                
-                # Category 4: Recommendations
-                recommendations = [
-                    f'{title} recommend',
-                    f'should I watch {title}',
-                ]
-                
-                all_queries = direct_intent + discussion + frustration + recommendations
-                
-                for q in all_queries:
-                    try:
-                        cursor.execute("""
-                            INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (q, m["id"], "movie", title, year, m["popularity"]))
-                        new_terms += 1
-                    except sqlite3.IntegrityError:
-                        pass # Already exists
+            # 1. Generate trending title terms
+            if "trending" in templates:
+                for item in content[:15]:  # Top 15 content
+                    title = item.get("title")
+                    if not title:
+                        continue
+                    
+                    for template in templates["trending"]:
+                        term = template.format(title=title)
+                        try:
+                            cursor.execute("""
+                                INSERT INTO search_term_pool 
+                                (term, lang_code, category, title, tmdb_id, popularity)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (term, lang_code, "trending", title, item["tmdb_id"], item["popularity"]))
+                            new_terms += 1
+                        except sqlite3.IntegrityError:
+                            pass
             
-            # Process TV Shows - EXPANDED CATEGORIES
-            for t in tv_shows:
-                name = t.get("name")
-                year = t.get("first_air_date", "")[:4]
-                if not name: continue
-                
-                # Category 1: Direct Intent
-                direct_intent = [
-                    f'"{name}" watch free',
-                    f'"{name}" streaming',
-                    f'where to watch "{name}"',
-                    f'"{name}" free episodes',
-                    f'"{name}" online free',
-                    f'"{name}" all seasons',
-                ]
-                
-                # Category 2: Discussion
-                discussion = [
-                    f'binging {name}',
-                    f'{name} is so good',
-                    f'{name} season',
-                    f'watching {name}',
-                ]
-                
-                # Category 3: Frustration
-                frustration = [
-                    f"can't find {name}",
-                    f'{name} removed',
-                    f'{name} not available',
-                ]
-                
-                all_queries = direct_intent + discussion + frustration
-                
-                for q in all_queries:
+            # 2. Generate recommendation terms
+            if "recommendation" in templates:
+                for template in templates["recommendation"]:
                     try:
                         cursor.execute("""
-                            INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
+                            INSERT INTO search_term_pool 
+                            (term, lang_code, category, title, tmdb_id, popularity)
                             VALUES (?, ?, ?, ?, ?, ?)
-                        """, (q, t["id"], "tv", name, year, t["popularity"]))
+                        """, (template, lang_code, "recommendation", "Generic", 0, 80))
                         new_terms += 1
                     except sqlite3.IntegrityError:
                         pass
             
-            # Category 5: Generic High-Volume (Not content-specific)
-            generic_terms = [
-                ("free movies online", 0, "generic", "Free Movies", "", 50),
-                ("free streaming site", 0, "generic", "Free Streaming", "", 50),
-                ("watch movies free", 0, "generic", "Free Movies", "", 50),
-                ("no ads streaming", 0, "generic", "No Ads", "", 50),
-                ("movie recommendations", 0, "generic", "Recommendations", "", 40),
-                ("what to watch tonight", 0, "generic", "What to Watch", "", 40),
-                ("best free streaming", 0, "generic", "Best Free", "", 45),
-                ("streaming without ads", 0, "generic", "No Ads", "", 45),
-                ("where to watch movies free", 0, "generic", "Watch Free", "", 50),
-            ]
+            # 3. Generate frustration terms (high intent!)
+            if "frustration" in templates:
+                for template in templates["frustration"]:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO search_term_pool 
+                            (term, lang_code, category, title, tmdb_id, popularity)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (template, lang_code, "frustration", "Generic", 0, 95))  # High priority
+                        new_terms += 1
+                    except sqlite3.IntegrityError:
+                        pass
             
-            for term, tmdb_id, content_type, title, year, popularity in generic_terms:
-                try:
-                    cursor.execute("""
-                        INSERT INTO search_term_pool (term, tmdb_id, content_type, title, year, popularity)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (term, tmdb_id, content_type, title, year, popularity))
-                    new_terms += 1
-                except sqlite3.IntegrityError:
-                    pass
+            # 4. Generate intent terms
+            if "intent" in templates:
+                for template in templates["intent"]:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO search_term_pool 
+                            (term, lang_code, category, title, tmdb_id, popularity)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (template, lang_code, "intent", "Generic", 0, 90))
+                        new_terms += 1
+                    except sqlite3.IntegrityError:
+                        pass
+            
+            # 5. Generate viral list terms (HIGH ENGAGEMENT posts!)
+            if "viral_lists" in templates:
+                for template in templates["viral_lists"]:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO search_term_pool 
+                            (term, lang_code, category, title, tmdb_id, popularity)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (template, lang_code, "viral_lists", "ViralList", 0, 100))  # Highest priority!
+                        new_terms += 1
+                    except sqlite3.IntegrityError:
+                        pass
             
             conn.commit()
         
-        print(f"Generated {new_terms} new high-intent search terms (10x expanded categories).")
-
-    def get_next_term(self) -> Dict[str, Any]:
-        """Get the best unused search term."""
-        # Ensure pool is populated
-        self.generate_search_terms()
+        print(f"[SmartSearch] Generated {new_terms} search terms for lang:{lang_code}")
+        return new_terms
+    
+    def get_next_term(self, lang_code: str, region: str) -> Dict[str, Any]:
+        """Get the next best search term for current language."""
+        import random
+        
+        # 60% chance: Use AI-generated creative terms (highest value!)
+        if random.random() < 0.6:
+            ai_terms = self.generate_ai_search_terms()
+            if ai_terms:
+                term = random.choice(ai_terms)
+                print(f"[AI Search] Using AI-generated term: {term}")
+                return {
+                    "search_term": term,
+                    "title": "AI-Generated",
+                    "category": "ai_creative",
+                    "tmdb_id": 0,
+                    "lang_code": lang_code,
+                }
+        
+        # Ensure pool is populated for fallback
+        self.generate_search_terms(lang_code, region)
         
         with get_db() as conn:
             cursor = conn.cursor()
             
-            # Select a term that hasn't been used in 24 hours, prioritizing popularity
-            yesterday = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+            # Select term not used in last 6 hours
+            six_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
             
             cursor.execute("""
                 SELECT * FROM search_term_pool 
-                WHERE last_used_at IS NULL OR last_used_at < ?
-                ORDER BY popularity DESC, random()
+                WHERE lang_code = ? 
+                AND (last_used_at IS NULL OR last_used_at < ?)
+                ORDER BY 
+                    CASE category 
+                        WHEN 'viral_lists' THEN 1 
+                        WHEN 'trending' THEN 2 
+                        WHEN 'recommendation' THEN 3 
+                        ELSE 4
+                    END,
+                    popularity DESC,
+                    random()
                 LIMIT 1
-            """, (yesterday,))
+            """, (lang_code, six_hours_ago))
             
             row = cursor.fetchone()
             
             if row:
-                # Update usage stats
                 cursor.execute("""
                     UPDATE search_term_pool 
                     SET last_used_at = ?, use_count = use_count + 1
                     WHERE id = ?
-                """, (datetime.utcnow().isoformat(), row["id"]))
+                """, (datetime.now(timezone.utc).isoformat(), row["id"]))
                 conn.commit()
                 
                 return {
                     "search_term": row["term"],
                     "title": row["title"],
-                    "year": row["year"],
+                    "category": row["category"],
                     "tmdb_id": row["tmdb_id"],
-                    "content_type": row["content_type"]
+                    "lang_code": lang_code,
                 }
             
-            # Fallback if all terms used recently (unlikely)
+            # Fallback for Nordic (title-only languages)
+            if lang_code in ["sv", "no", "da"]:
+                content = self.tmdb.get_trending_global()
+                if content:
+                    title = content[0].get("title", "Avatar")
+                    return {
+                        "search_term": f"{title} lang:{lang_code}",
+                        "title": title,
+                        "category": "trending",
+                        "tmdb_id": content[0].get("id", 0),
+                        "lang_code": lang_code,
+                    }
+            
+            # Ultimate fallback
             return {
-                "search_term": '"where to watch" free',
+                "search_term": "recommend me a movie" if lang_code == "en" else f"Film lang:{lang_code}",
                 "title": "Generic",
-                "year": "",
+                "category": "fallback",
                 "tmdb_id": 0,
-                "content_type": "generic"
+                "lang_code": lang_code,
             }
 
 # ============================================================================
@@ -449,17 +927,19 @@ class TweetAnalysisRequest(BaseModel):
     tweet_text: str
     user_handle: str
     parent_text: Optional[str] = None
-    # Context from Smart Search
+    thread_replies: Optional[List[str]] = None  # NEW: Existing replies in thread
+    user_bio: Optional[str] = None              # NEW: User profile bio
     movie_title: Optional[str] = None
-    movie_year: Optional[str] = None
-    search_lang: Optional[str] = None  # Language code from search (e.g., 'ko', 'ja')
+    search_category: Optional[str] = None       # NEW: frustration, intent, trending, etc.
+    search_lang: Optional[str] = None
 
 class TweetAnalysisResponse(BaseModel):
-    action: str  # "REPLY" or "SKIP"
+    action: str
     reason: str
     draft: Optional[str] = None
     language: str
     trend_injected: Optional[str] = None
+    sentiment: Optional[str] = None  # NEW: detected sentiment
 
 class TrendUpdateRequest(BaseModel):
     region: str
@@ -470,19 +950,18 @@ class ScheduleResponse(BaseModel):
     location: str
     language: str
     lang_code: str
+    tmdb_region: str
     current_trends: List[str]
-    keywords: List[str]
 
 class SmartSearchResponse(BaseModel):
     search_term: str
     title: str
-    year: str
+    category: str
     tmdb_id: int
-    content_type: str
-    lang_code: str  # Language code for the search (e.g., 'ko', 'ja', 'en')
+    lang_code: str
 
 # ============================================================================
-# GROQ LLM CLIENT
+# ADVANCED LLM CLIENT (Sophisticated AI Orchestrator)
 # ============================================================================
 
 class LLMClient:
@@ -491,73 +970,173 @@ class LLMClient:
             print("WARNING: GROQ_API_KEY not set. LLM calls will fail.")
         self.client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     
+    def _detect_sentiment(self, tweet_text: str, category: str) -> str:
+        """Detect the emotional sentiment of the tweet."""
+        tweet_lower = tweet_text.lower()
+        
+        # Frustration indicators
+        frustration_words = ["hate", "can't", "won't", "expensive", "sucks", "terrible", "annoyed", "frustrated", "ugh", "tired of", "teuer", "cher", "duur"]
+        if any(word in tweet_lower for word in frustration_words) or category == "frustration":
+            return "frustrated"
+        
+        # Excitement indicators
+        excitement_words = ["amazing", "love", "best", "incredible", "wow", "omg", "can't wait", "excited", "geil", "génial", "vet"]
+        if any(word in tweet_lower for word in excitement_words):
+            return "excited"
+        
+        # Seeking indicators
+        seeking_words = ["where", "how to", "looking for", "need", "anyone know", "recommend", "suggestion", "wo", "où", "waar"]
+        if any(word in tweet_lower for word in seeking_words) or category in ["intent", "recommendation"]:
+            return "seeking"
+        
+        # Neutral/discussing
+        return "neutral"
+    
     def analyze_and_draft(
         self,
         tweet_text: str,
         lang_code: str,
         region: str,
         trends: List[str],
-        movie_title: str = None, # NEW: Context
-        movie_year: str = None,  # NEW: Context
-        parent_text: Optional[str] = None
+        movie_title: str = None,
+        search_category: str = None,
+        parent_text: Optional[str] = None,
+        thread_replies: Optional[List[str]] = None,
+        user_bio: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Analyze tweet intent and draft a reply."""
+        """Sophisticated analysis with context awareness and sentiment matching."""
+        
+        sentiment = self._detect_sentiment(tweet_text, search_category or "")
         
         if not self.client:
             return {
                 "action": "REPLY",
                 "reason": "MOCK: Intent detected",
                 "draft": f"[MOCK] Check out {SITE_URL}!",
-                "trend": trends[0] if trends else None
+                "trend": trends[0] if trends else None,
+                "sentiment": sentiment
             }
         
         lang_name = LANG_NAMES.get(lang_code, "English")
-        trends_str = ", ".join(trends[:5]) if trends else "#Movies, #Streaming, #WatchOnline"
         
-        # Contextual Prompt
-        context_block = ""
+        # HASHTAG ROTATION: Pick a specific hashtag for this reply (rotates through all)
+        if trends and len(trends) > 0:
+            selected_hashtag = random.choice(trends)  # Random selection for variety
+            trends_str = f"{selected_hashtag} (USE THIS EXACT HASHTAG)"
+        else:
+            selected_hashtag = "#Movies"
+            trends_str = "#Movies, #Streaming"
+        
+        # Get native phrases for authentic voice
+        phrases = NATIVE_PHRASES.get(lang_code, NATIVE_PHRASES["en"])
+        check_phrases = ", ".join(phrases.get("check_it", ["check out"]))
+        good_words = ", ".join(phrases.get("good", ["fire"]))
+        reactions = ", ".join(phrases.get("reaction", ["fr"]))
+        emojis = " ".join(phrases.get("emoji", ["🔥"]))
+        
+        # Build context blocks
+        context_blocks = []
+        
         if movie_title:
-            context_block = f"""
-CONTEXT: User searched for "{movie_title}" ({movie_year}). Verify tweet is about this content.
+            context_blocks.append(f"SEARCH CONTEXT: User searched for '{movie_title}'")
+        
+        if search_category:
+            category_hints = {
+                "frustration": "User seems FRUSTRATED with streaming services - empathize and offer solution",
+                "intent": "User is ACTIVELY SEEKING where to watch - direct recommendation",
+                "recommendation": "User wants RECOMMENDATIONS - be helpful and suggest the site",
+                "trending": "User is DISCUSSING a trending title - join naturally",
+            }
+            context_blocks.append(f"INTENT: {category_hints.get(search_category, 'General discussion')}")
+        
+        if sentiment:
+            sentiment_instructions = {
+                "frustrated": "Match their frustration, validate their feelings, then offer the solution as relief",
+                "excited": "Match their excitement! Be enthusiastic about the content too",
+                "seeking": "Be helpful and direct - they want an answer, give them one",
+                "neutral": "Be casual and friendly, like a friend sharing a tip",
+            }
+            context_blocks.append(f"SENTIMENT: {sentiment_instructions.get(sentiment, '')}")
+        
+        if thread_replies:
+            context_blocks.append(f"EXISTING REPLIES ({len(thread_replies)}): The thread already has replies. Make yours unique and add value.")
+        
+        if user_bio:
+            context_blocks.append(f"USER BIO: '{user_bio[:100]}' - Reference their interests if relevant")
+        
+        context_section = "\n".join(context_blocks) if context_blocks else "No additional context."
+        
+        system_prompt = f"""You are a curious movie fan who recently discovered streamixapp.pages.dev. 
+You're NOT promoting it - you're genuinely WONDERING if it has what people are looking for.
+
+=== THE TWEET ===
+"{tweet_text}"
+
+=== YOUR MISSION ===
+Create a QUESTION-BASED reply that makes people CURIOUS to click the link.
+You're not telling them to use it - you're WONDERING ALOUD if it has what they need.
+
+=== QUESTION FORMATS (USE THESE!) ===
+
+For movie lists/recommendations:
+- "wait does streamixapp.pages.dev actually have all these in 4K? 👀"
+- "hmm I wonder if streamixapp.pages.dev has these with no popups..."
+- "has anyone checked streamixapp.pages.dev for new releases? no ads supposedly"
+
+For specific movies:
+- "does streamixapp.pages.dev have [movie]? heard it's free there"
+- "wait is [movie] on streamixapp.pages.dev? no signup needed apparently"
+
+For frustration/complaints:
+- "have you tried streamixapp.pages.dev? supposedly no subscription needed 🤔"
+- "wonder if streamixapp.pages.dev is actually free like they say..."
+
+For "where to watch" questions:
+- "maybe check streamixapp.pages.dev? it has HD no ads from what I've seen"
+- "streamixapp.pages.dev might have it? free + no popups supposedly"
+
+=== CONTEXT ===
+{context_section}
+
+=== STRICT RULES ===
+1. Under 140 characters
+2. ALWAYS include streamixapp.pages.dev
+3. ALWAYS include ONE hashtag from: {trends_str}
+4. USE QUESTION FORMAT - wondering, curious, asking
+5. Include 1-2 benefits: 4K, no ads, no popups, free, no signup
+6. Sound like a REAL person wondering, NOT a marketer
+
+=== SKIP THESE ===
+❌ Sports, politics, gaming, packages, music → output SKIP
+
+=== EXAMPLES ===
+
+Tweet: "Top 50 Movies January 2025 🎬"
+Reply: "wait does streamixapp.pages.dev have all these in 4K? no popups too 👀 #Movies"
+
+Tweet: "where can I watch Zootopia 2"
+Reply: "does streamixapp.pages.dev have Zootopia 2? supposedly free + HD 🤔 #Streaming"
+
+Tweet: "netflix is too expensive"
+Reply: "have you tried streamixapp.pages.dev? no subscription needed apparently #Netflix"
+
+Tweet: "best movies to watch this month"
+Reply: "hmm wonder if streamixapp.pages.dev has new releases in 4K... no ads btw 👀 #Film"
+
+Tweet: "I need something good to watch"
+Reply: "maybe streamixapp.pages.dev? tons of free stuff, no signup from what I know 🎬 #Movies"
+
+=== OUTPUT (JSON) ===
+If streaming-related: {{"action": "REPLY", "reason": "brief", "draft": "your QUESTION-BASED reply", "trend": "#Hashtag"}}
+If not streaming: {{"action": "SKIP", "reason": "not streaming - [topic]", "draft": null}}
 """
 
-        system_prompt = f"""You are a genuine movie fan on X (Twitter) who discovered an amazing streaming site.
-You speak {lang_name} natively. You're helpful, casual, and sound like a real person - NOT a marketer.
-
-{context_block}
-
-=== ABSOLUTE RULES (VIOLATING ANY = FAILURE) ===
-
-RULE 1 - CHARACTER LIMIT: Your reply MUST be under 200 characters total. Twitter has limits.
-
-RULE 2 - MANDATORY SITE: You MUST include "streamixapp.pages.dev" in EVERY reply.
-   This is the ONLY site you recommend. Period.
-
-RULE 3 - BANNED WORDS: NEVER mention these competitors:
-   Netflix, Hulu, Amazon, Disney+, HBO, Sflix, Fmovies, 123movies, Soap2day, or ANY other streaming site.
-   If the tweet mentions these, just say our site is better without naming them.
-
-RULE 4 - TRENDING HASHTAG: Include ONE hashtag from: {trends_str}
-
-RULE 5 - AUTHENTIC VOICE: Sound like these real examples:
-   - "yo check streamixapp.pages.dev for that, no ads fr 🔥 #Movies"
-   - "been using streamixapp.pages.dev lately, way cleaner #Streaming"
-   - "streamixapp.pages.dev has it, zero popups 💯 #WatchOnline"
-   - "found it on streamixapp.pages.dev ngl pretty solid #Cinema"
-
-RULE 6 - REPLY OR SKIP:
-   REPLY if: User is looking for where to watch, asking for recommendations, frustrated about finding content
-   SKIP if: Just discussing plot, reviewing, already has a solution, is a bot/brand, off-topic
-
-RULE 7 - LANGUAGE: Reply in {lang_name} only.
-
-=== OUTPUT (JSON ONLY, NO MARKDOWN) ===
-{{"action": "REPLY" or "SKIP", "reason": "brief why", "draft": "your reply under 200 chars", "trend": "#UsedHashtag"}}
-"""
 
         user_message = f"Tweet: {tweet_text}"
         if parent_text:
-            user_message += f"\nParent Tweet: {parent_text}"
+            user_message += f"\n\nParent Tweet (context): {parent_text}"
+        if thread_replies:
+            user_message += f"\n\nExisting replies in thread: {'; '.join(thread_replies[:3])}"
 
         try:
             response = self.client.chat.completions.create(
@@ -566,21 +1145,29 @@ RULE 7 - LANGUAGE: Reply in {lang_name} only.
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                temperature=0.7,
+                temperature=0.8,  # Slightly higher for more natural variation
                 max_tokens=500
             )
             
             result_text = response.choices[0].message.content.strip()
+            
+            # Clean up markdown if present
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
                 if result_text.strip().startswith("json"):
                     result_text = result_text.strip()[4:]
             
-            return json.loads(result_text)
+            result = json.loads(result_text)
+            result["sentiment"] = sentiment
+            return result
             
+        except json.JSONDecodeError as e:
+            print(f"LLM JSON Parse Error: {e}")
+            print(f"Raw response: {result_text[:200] if 'result_text' in dir() else 'N/A'}")
+            return {"action": "SKIP", "reason": f"JSON parse error", "draft": None, "sentiment": sentiment}
         except Exception as e:
             print(f"LLM Error: {e}")
-            return {"action": "SKIP", "reason": f"Error: {e}", "draft": None}
+            return {"action": "SKIP", "reason": f"Error: {e}", "draft": None, "sentiment": sentiment}
 
 # ============================================================================
 # CORE LOGIC
@@ -588,7 +1175,7 @@ RULE 7 - LANGUAGE: Reply in {lang_name} only.
 
 def get_current_schedule() -> Dict[str, Any]:
     """Get the current target based on UTC hour."""
-    now = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+    now = datetime.now(timezone.utc)
     hour = now.hour
     slot = DAILY_SCHEDULE[hour]
     return {
@@ -596,32 +1183,36 @@ def get_current_schedule() -> Dict[str, Any]:
         "location": slot["location"],
         "lang_code": slot["lang"],
         "language": LANG_NAMES.get(slot["lang"], "English"),
-        "keywords": KEYWORDS.get(slot["lang"], KEYWORDS["en"])
+        "tmdb_region": slot["tmdb_region"],
     }
 
-def check_duplicate(tweet_id: str, user_handle: str) -> tuple[bool, str]:
+def check_duplicate(tweet_id: str, user_handle: str) -> tuple:
     """Check if we should skip this tweet."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM replied_tweets WHERE tweet_id = ?", (tweet_id,))
-        if cursor.fetchone(): return True, "Already replied"
+        if cursor.fetchone(): 
+            return True, "Already replied"
         
         cursor.execute("SELECT 1 FROM scanned_tweets WHERE tweet_id = ?", (tweet_id,))
-        if cursor.fetchone(): return True, "Already scanned"
+        if cursor.fetchone(): 
+            return True, "Already scanned"
         
-        yesterday = datetime.utcnow() - timedelta(hours=24)
-        cursor.execute("SELECT COUNT(*) FROM replied_tweets WHERE user_handle = ? AND timestamp > ?", (user_handle, yesterday.isoformat()))
-        if cursor.fetchone()[0] >= 2: return True, "User cooldown"
+        yesterday = datetime.now(timezone.utc) - timedelta(hours=24)
+        cursor.execute("SELECT COUNT(*) FROM replied_tweets WHERE user_handle = ? AND timestamp > ?", 
+                      (user_handle, yesterday.isoformat()))
+        if cursor.fetchone()[0] >= 2: 
+            return True, "User cooldown"
     
     return False, ""
 
-def log_reply(tweet_id: str, user_handle: str, region: str, language: str, reply_text: str):
+def log_reply(tweet_id: str, user_handle: str, region: str, language: str, reply_text: str, search_term: str = None, sentiment: str = None):
     """Log a successful reply."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO replied_tweets (tweet_id, user_handle, region, language, reply_text) VALUES (?, ?, ?, ?, ?)",
-            (tweet_id, user_handle, region, language, reply_text)
+            "INSERT INTO replied_tweets (tweet_id, user_handle, region, language, reply_text, search_term, sentiment) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (tweet_id, user_handle, region, language, reply_text, search_term, sentiment)
         )
         conn.commit()
 
@@ -646,12 +1237,12 @@ def get_cached_trends(region: str) -> List[str]:
             try:
                 trends = json.loads(row["trends"])
                 if trends and len(trends) > 0:
-                    return trends
-            except:
+                    return trends[:10]  # Top 10 only
+            except Exception:
                 pass
-                
-    # Fallback if cache empty or invalid
-    return ["#Streaming", "#Movies", "#WatchOnline", "#Cinema", "#WhatToWatch"]
+    
+    # Fallback trends
+    return ["#Streaming", "#Movies", "#WatchOnline", "#Cinema", "#Film"]
 
 def update_trend_cache(region: str, trends: List[str]):
     """Update trend cache for a region."""
@@ -659,31 +1250,44 @@ def update_trend_cache(region: str, trends: List[str]):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO trend_cache (region, trends, harvested_at) VALUES (?, ?, ?)",
-            (region, json.dumps(trends), datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat())
+            (region, json.dumps(trends), datetime.now(timezone.utc).isoformat())
         )
         conn.commit()
 
 def get_stats() -> Dict[str, Any]:
+    """Get bot statistics."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM replied_tweets")
         total = cursor.fetchone()[0]
-        # Fix datetime deprecation
-        now = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         cursor.execute("SELECT COUNT(*) FROM replied_tweets WHERE timestamp > ?", (today.isoformat(),))
         today_count = cursor.fetchone()[0]
+        
         cursor.execute("SELECT COUNT(DISTINCT user_handle) FROM replied_tweets")
         unique = cursor.fetchone()[0]
+        
         cursor.execute("SELECT language, COUNT(*) FROM replied_tweets GROUP BY language")
         langs = dict(cursor.fetchall())
-    return {"total_replies": total, "replies_today": today_count, "unique_users": unique, "by_language": langs}
+        
+        cursor.execute("SELECT sentiment, COUNT(*) FROM replied_tweets WHERE sentiment IS NOT NULL GROUP BY sentiment")
+        sentiments = dict(cursor.fetchall())
+        
+    return {
+        "total_replies": total, 
+        "replies_today": today_count, 
+        "unique_users": unique, 
+        "by_language": langs,
+        "by_sentiment": sentiments,
+        "estimated_impressions": today_count * 150,  # X Premium boost estimate
+    }
 
 # ============================================================================
 # FASTAPI APP
 # ============================================================================
 
-app = FastAPI(title="XBot Brain", version="2.0.0")
+app = FastAPI(title="XBot Brain v8.0", version="8.0.0", description="Million Visitor Engine")
 
 app.add_middleware(
     CORSMiddleware,
@@ -700,10 +1304,16 @@ init_database()
 
 @app.get("/")
 def root():
-    return {"status": "online", "service": "XBot Brain v2.0 (TMDB Enabled)"}
+    return {
+        "status": "online", 
+        "service": "XBot Brain v8.0 (Million Visitor Engine)",
+        "tier1_languages": list(LANG_NAMES.keys()),
+        "features": ["TMDB Regional", "Sentiment Analysis", "Native Phrases", "Thread Context"]
+    }
 
 @app.get("/schedule", response_model=ScheduleResponse)
 def get_schedule():
+    """Get current schedule with regional targeting."""
     schedule = get_current_schedule()
     trends = get_cached_trends(schedule["region"])
     return ScheduleResponse(
@@ -711,33 +1321,30 @@ def get_schedule():
         location=schedule["location"],
         language=schedule["language"],
         lang_code=schedule["lang_code"],
-        current_trends=trends,
-        keywords=schedule["keywords"]
+        tmdb_region=schedule["tmdb_region"],
+        current_trends=trends
     )
 
 @app.get("/smart-search", response_model=SmartSearchResponse)
 def get_search_term():
-    """Get the next best high-intent search term with language filter."""
+    """Get the next best validated search term."""
     schedule = get_current_schedule()
     lang_code = schedule["lang_code"]
+    region = schedule["tmdb_region"]
     
-    term_data = smart_search.get_next_term()
-    
-    # Append lang:xx filter to ensure we get tweets in target language
-    original_term = term_data["search_term"]
-    localized_term = f"{original_term} lang:{lang_code}"
+    term_data = smart_search.get_next_term(lang_code, region)
     
     return SmartSearchResponse(
-        search_term=localized_term,
+        search_term=term_data["search_term"],
         title=term_data["title"],
-        year=term_data["year"],
+        category=term_data["category"],
         tmdb_id=term_data["tmdb_id"],
-        content_type=term_data["content_type"],
-        lang_code=lang_code
+        lang_code=term_data["lang_code"]
     )
 
 @app.post("/analyze", response_model=TweetAnalysisResponse)
 def analyze_tweet(request: TweetAnalysisRequest):
+    """Analyze tweet with sophisticated AI orchestration."""
     is_duplicate, reason = check_duplicate(request.tweet_id, request.user_handle)
     if is_duplicate:
         return TweetAnalysisResponse(action="SKIP", reason=reason, draft=None, language="", trend_injected=None)
@@ -745,17 +1352,18 @@ def analyze_tweet(request: TweetAnalysisRequest):
     schedule = get_current_schedule()
     trends = get_cached_trends(schedule["region"])
     
-    # Use search_lang if provided (from smart search), else fall back to schedule
     reply_lang = request.search_lang if request.search_lang else schedule["lang_code"]
     
     result = llm_client.analyze_and_draft(
         tweet_text=request.tweet_text,
-        lang_code=reply_lang,  # Use the search language for the reply
+        lang_code=reply_lang,
         region=schedule["region"],
         trends=trends,
         movie_title=request.movie_title,
-        movie_year=request.movie_year,
-        parent_text=request.parent_text
+        search_category=request.search_category,
+        parent_text=request.parent_text,
+        thread_replies=request.thread_replies,
+        user_bio=request.user_bio,
     )
     
     if result["action"] == "SKIP":
@@ -766,41 +1374,31 @@ def analyze_tweet(request: TweetAnalysisRequest):
         reason=result["reason"],
         draft=result.get("draft"),
         language=schedule["language"],
-        trend_injected=result.get("trend")
+        trend_injected=result.get("trend"),
+        sentiment=result.get("sentiment")
     )
 
 class LogReplyRequest(BaseModel):
     tweet_id: str
     user_handle: str
     reply_text: str
+    search_term: Optional[str] = None
+    sentiment: Optional[str] = None
 
 @app.post("/log-reply")
 def log_successful_reply(request: LogReplyRequest):
+    """Log a successful reply with analytics."""
     schedule = get_current_schedule()
     log_reply(
         tweet_id=request.tweet_id,
         user_handle=request.user_handle,
         region=schedule["region"],
         language=schedule["lang_code"],
-        reply_text=request.reply_text
+        reply_text=request.reply_text,
+        search_term=request.search_term,
+        sentiment=request.sentiment
     )
-    return {"status": "logged"}
-
-@app.post("/update-trends")
-def update_trends(request: TrendUpdateRequest):
-    update_trend_cache(request.region, request.trends)
-    return {"status": "updated", "region": request.region, "trends_count": len(request.trends)}
-
-@app.get("/stats")
-def get_statistics_endpoint():
-    return get_stats()
-
-@app.get("/check-health")
-def check_health():
-    stats = get_stats()
-    warnings = []
-    if stats["replies_today"] >= 150: warnings.append("Daily limit approaching")
-    return {"status": "HEALTHY" if not warnings else "WARNING", "warnings": warnings, "stats": stats}
+    return {"status": "logged", "estimated_reach": 150}
 
 class LocationSelectRequest(BaseModel):
     target_location: str
@@ -808,28 +1406,80 @@ class LocationSelectRequest(BaseModel):
 
 @app.post("/select-location")
 def select_location(request: LocationSelectRequest):
+    """Select the best location match from available options."""
     target = request.target_location.lower()
-    target_parts = target.replace(',', ' ').split()
-    best_match = -1
+    options = request.options
+    
+    best_index = -1
     best_score = 0
     
-    for i, option in enumerate(request.options):
-        option_lower = option.lower()
-        score = 0
-        if target in option_lower: score += 10
-        for part in target_parts:
-            if part in option_lower: score += 2
-        if score > 0: score += max(0, 10 - len(option) // 5)
-        if score > best_score:
-            best_score = score
-            best_match = i
-            
-    if best_match >= 0:
-        return {"index": best_match, "selected": request.options[best_match], "confidence": best_score}
-    else:
-        return {"index": 0, "selected": request.options[0] if request.options else None, "confidence": 0}
+    for i, opt in enumerate(options):
+        opt_lower = opt.lower()
+        
+        # Exact match
+        if target == opt_lower:
+            return {"index": i, "selected": opt, "match_type": "exact"}
+        
+        # Target is contained in option (e.g., "London" in "London, UK")
+        if target in opt_lower:
+            score = len(target) / len(opt_lower)
+            if score > best_score:
+                best_score = score
+                best_index = i
+        
+        # Option starts with target
+        elif opt_lower.startswith(target):
+            score = 0.9
+            if score > best_score:
+                best_score = score
+                best_index = i
+        
+        # First word matches
+        elif opt_lower.split(",")[0].strip() == target or opt_lower.split(" ")[0] == target:
+            score = 0.8
+            if score > best_score:
+                best_score = score
+                best_index = i
+    
+    if best_index >= 0:
+        return {"index": best_index, "selected": options[best_index], "match_type": "fuzzy", "score": best_score}
+    
+    return {"index": -1, "selected": None, "match_type": "none"}
 
-if __name__ == "__main__":
-    import uvicorn
-    print("Starting XBot Brain Server v2.0 (TMDB Enabled)...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.post("/update-trends")
+def update_trends(request: TrendUpdateRequest):
+    """Update trend cache for a region."""
+    update_trend_cache(request.region, request.trends)
+    return {"status": "updated", "region": request.region, "trends_count": len(request.trends)}
+
+@app.get("/stats")
+def get_statistics_endpoint():
+    """Get comprehensive statistics."""
+    return get_stats()
+
+@app.get("/regional-content")
+def get_regional_content():
+    """Get current regional trending content."""
+    schedule = get_current_schedule()
+    tmdb = TMDBClient()
+    content = tmdb.get_regional_content(schedule["tmdb_region"], schedule["lang_code"])
+    return {
+        "region": schedule["region"],
+        "lang_code": schedule["lang_code"],
+        "content_count": len(content),
+        "content": content[:20]
+    }
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint."""
+    stats = get_stats()
+    schedule = get_current_schedule()
+    return {
+        "status": "healthy",
+        "version": "8.0.0",
+        "current_region": schedule["region"],
+        "current_lang": schedule["lang_code"],
+        "replies_today": stats["replies_today"],
+        "estimated_daily_reach": stats["replies_today"] * 150
+    }

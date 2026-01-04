@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XBot v7.1 (Language-Aware Targeting)
+// @name         XBot v8.0 (Million Visitor Engine)
 // @namespace    http://tampermonkey.net/
-// @version      7.1
-// @description  X.com Bot - Fixed lang: search filter & trend harvesting
+// @version      8.0
+// @description  X.com Bot - Advanced AI Orchestrator with Tier 1 High-CPM Targeting
 // @author       XBot
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -24,13 +24,14 @@
 
     const CONFIG = {
         BRAIN_URL: 'http://localhost:8000',
-        MAIN_LOOP_INTERVAL: 45000,
-        REPLY_COOLDOWN: 75000,
-        KEYWORD_ROTATE_INTERVAL: 300000,
+        MAIN_LOOP_INTERVAL: 15000,      // 15s between scans
+        REPLY_COOLDOWN: 3000,           // 3 seconds between replies
+        EMPTY_SCANS_BEFORE_ROTATE: 3,   // Rotate after 3 empty scans (exhausted)
         TREND_HARVEST_INTERVAL: 1800000,
         LOCATION_SWITCH_COOLDOWN: 3600000,
-        MAX_REPLIES_PER_HOUR: 6,
-        MAX_REPLIES_PER_DAY: 100,
+        MAX_REPLIES_PER_HOUR: 60,       // Aggressive
+        MAX_REPLIES_PER_SCAN: 100,      // Process ALL candidates
+        MAX_REPLIES_PER_DAY: 500,       // High daily limit
         DRY_RUN: true,
         DEBUG: true
     };
@@ -102,12 +103,18 @@
         processedTweets: new Set(),
         consecutiveErrors: 0,
         locationSwitchStep: LOCATION_STEPS.NAVIGATE,
-        // Smart Search State
+        // Smart Search State v8.0
         currentSearchTerm: '',
         currentMovieTitle: null,
-        currentMovieYear: null,
         currentTMDBId: null,
-        currentSearchLang: 'en', // Language code from smart search (e.g., 'ko', 'ja')
+        currentSearchLang: 'en',
+        currentSearchCategory: null, // frustration, intent, recommendation, trending
+        // Exhaustion-based rotation
+        shouldRotateKeyword: false,
+        consecutiveEmptyScans: 0,
+        // Analytics v8.0
+        estimatedReach: 0,
+        sentimentStats: { frustrated: 0, excited: 0, seeking: 0, neutral: 0 },
     };
 
     // ========================================================================
@@ -175,19 +182,18 @@
             // Smart Search Persistence
             currentSearchTerm: STATE.currentSearchTerm,
             currentMovieTitle: STATE.currentMovieTitle,
-            currentMovieYear: STATE.currentMovieYear,
             currentTMDBId: STATE.currentTMDBId,
 
             processedTweets: Array.from(STATE.processedTweets).slice(-200),
             locationSwitchStep: STATE.locationSwitchStep,
             timestamp: Date.now()
         };
-        GM_setValue('xbot_state_v71', JSON.stringify(data));
+        GM_setValue('xbot_state_v80', JSON.stringify(data));
     }
 
     function loadState() {
         try {
-            const saved = GM_getValue('xbot_state_v71', null);
+            const saved = GM_getValue('xbot_state_v80', null);
             if (!saved) return false;
 
             const data = JSON.parse(saved);
@@ -208,7 +214,6 @@
             // Load Smart Search Data
             if (data.currentSearchTerm) STATE.currentSearchTerm = data.currentSearchTerm;
             if (data.currentMovieTitle) STATE.currentMovieTitle = data.currentMovieTitle;
-            if (data.currentMovieYear) STATE.currentMovieYear = data.currentMovieYear;
             if (data.currentTMDBId) STATE.currentTMDBId = data.currentTMDBId;
 
             STATE.processedTweets = new Set(data.processedTweets || []);
@@ -250,6 +255,55 @@
         return t.includes('promoted') || t.includes('ad ·');
     }
 
+    // Pre-filter: Check if tweet is likely streaming-related
+    // GOAL: Be INCLUSIVE - let LLM make the final decision. Only skip OBVIOUS non-streaming content.
+    function isLikelyStreamingRelated(text) {
+        const lower = text.toLowerCase();
+
+        // HARD SKIP: Topics that are NEVER relevant (sports, politics, etc.)
+        const hardSkipKeywords = [
+            // Sports (specific terms only)
+            'goal', 'touchdown', 'halftime', 'premier league', 'champions league',
+            'nba', 'nfl', 'fifa', 'world cup', 'playoff', 'semifinals',
+            // Politics
+            'trump', 'biden', 'election', 'vote', 'congress', 'senate',
+            // Package delivery (not Prime Video)
+            'package delivered', 'shipping', 'tracking number', 'warehouse',
+            // Music-only content
+            'spotify', 'playlist', 'concert tickets', 'tour dates',
+        ];
+
+        if (hardSkipKeywords.some(kw => lower.includes(kw))) {
+            return false;
+        }
+
+        // PASS: Any of these keywords = send to LLM for analysis
+        const streamingKeywords = [
+            // Core streaming words
+            'streaming', 'stream', 'watch', 'movie', 'film', 'show', 'series',
+            'netflix', 'hulu', 'disney', 'hbo', 'prime video', 'amazon prime',
+            // Intent signals
+            'where to', 'how to', 'want to watch', 'looking for',
+            'recommend', 'suggestion', 'what should i',
+            // Frustration signals
+            'expensive', 'cancel', 'subscription', 'paying for', 'cost',
+            'too many', 'sick of', 'tired of', 'hate paying',
+            // Quality signals
+            'hd', '4k', 'quality', 'buffering', 'ads', 'no ads', 'free',
+            // Piracy signals
+            'illegal', 'pirate', 'torrent', 'free site',
+            // Movie-specific
+            'cinema', 'theater', 'box office', 'sequel', 'episode', 'season',
+        ];
+
+        if (streamingKeywords.some(kw => lower.includes(kw))) {
+            return true;
+        }
+
+        // Ambiguous - skip (let next loop find better candidates)
+        return false;
+    }
+
     // ========================================================================
     // API
     // ========================================================================
@@ -277,7 +331,6 @@
         STATE.currentRegion = s.region;
         STATE.currentLocation = s.location;
         STATE.currentLang = s.lang_code;
-        STATE.currentKeywords = s.keywords || [];
         if (s.current_trends?.length > 0) STATE.currentTrends = s.current_trends;
         return s;
     }
@@ -591,11 +644,11 @@
                 if (searchData && searchData.search_term) {
                     STATE.currentSearchTerm = searchData.search_term;
                     STATE.currentMovieTitle = searchData.title;
-                    STATE.currentMovieYear = searchData.year;
                     STATE.currentTMDBId = searchData.tmdb_id;
-                    STATE.currentSearchLang = searchData.lang_code || 'en'; // Store language for reply
+                    STATE.currentSearchLang = searchData.lang_code || 'en';
+                    STATE.currentSearchCategory = searchData.category || 'trending';
 
-                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title}, Lang: ${searchData.lang_code})`);
+                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title}, Lang: ${searchData.lang_code}, Category: ${searchData.category})`);
                     saveState();
 
                     window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
@@ -619,35 +672,33 @@
             return 'NAVIGATING';
         }
 
-        // If we are already on search page, check if we need to rotate
-        if (Date.now() - STATE.lastKeywordRotation > CONFIG.KEYWORD_ROTATE_INTERVAL) {
-            // New: Fetch Smart Search Term from Brain
-            log('Rotating Search Term (Smart Search)...');
+        // EXHAUSTION-BASED ROTATION: Only rotate when no candidates found after multiple scans
+        // This is set by scanAndReply when it finds nothing new
+        if (STATE.shouldRotateKeyword) {
+            log('🔄 Search exhausted! Rotating to new search term...');
+            STATE.shouldRotateKeyword = false;
+            STATE.consecutiveEmptyScans = 0;
+
             try {
                 const searchData = await callBrain('/smart-search');
                 if (searchData && searchData.search_term) {
                     STATE.currentSearchTerm = searchData.search_term;
                     STATE.currentMovieTitle = searchData.title;
-                    STATE.currentMovieYear = searchData.year;
                     STATE.currentTMDBId = searchData.tmdb_id;
+                    STATE.currentSearchLang = searchData.lang_code || 'en';
+                    STATE.currentSearchCategory = searchData.category || 'trending';
                     STATE.lastKeywordRotation = Date.now();
+                    STATE.processedTweets.clear(); // Clear for new search
 
-                    log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title})`);
+                    log(`📍 New Search: "${searchData.search_term}" (${searchData.category})`);
                     saveState();
 
                     window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
                     return 'NAVIGATING';
                 }
             } catch (e) {
-                log('Error rotating smart search term:', e);
+                log('Error rotating search term:', e);
             }
-
-            STATE.currentKeywordIndex++;
-            STATE.lastKeywordRotation = Date.now();
-            log('Rotating keyword (Fallback)...');
-            saveState();
-            window.location.reload();
-            return 'RELOADING';
         }
 
         return 'READY';
@@ -657,8 +708,14 @@
         log('=== SCANNING ===');
         STATE.phase = PHASES.SCANNING;
 
-        window.scrollBy({ top: randomBetween(300, 500), behavior: 'smooth' });
-        await sleep(2000);
+        // AGGRESSIVE SCROLLING - 10 passes to load ALL tweets
+        const scrollPasses = 10;
+        for (let scrollPass = 0; scrollPass < scrollPasses; scrollPass++) {
+            log(`Scroll ${scrollPass + 1}/${scrollPasses}...`);
+            window.scrollBy({ top: randomBetween(1000, 1500), behavior: 'smooth' });
+            await sleep(800); // Fast scrolling
+        }
+        await sleep(1000);
 
         const tweets = document.querySelectorAll('article[data-testid="tweet"]');
         const candidates = [];
@@ -670,38 +727,141 @@
             STATE.processedTweets.add(data.tweet_id);
             if (isPromotedTweet(tw) || isVerifiedAccount(tw) || isBlockedAccount(data.user_handle) || containsIndiaContent(data.tweet_text)) continue;
 
+            // v8.1: Pre-filter for streaming relevance (saves API calls)
+            if (!isLikelyStreamingRelated(data.tweet_text)) {
+                log(`⏭️ Pre-filtered (not streaming): @${data.user_handle}`);
+                continue;
+            }
+
+            // v8.0: Extract thread replies for context
+            data.thread_replies = extractThreadReplies(tw);
+
             candidates.push(data);
         }
 
-        log('Candidates:', candidates.length);
-        if (candidates.length === 0) return 'NO_CANDIDATES';
+        log('Total candidates found:', candidates.length);
 
-        if (STATE.repliesThisHour >= CONFIG.MAX_REPLIES_PER_HOUR) return 'LIMIT_REACHED';
-        if (Date.now() - STATE.lastReplyTime < CONFIG.REPLY_COOLDOWN) return 'COOLDOWN';
+        // EXHAUSTION DETECTION: Track empty scans to know when to rotate
+        if (candidates.length === 0) {
+            STATE.consecutiveEmptyScans++;
+            log(`No new candidates (${STATE.consecutiveEmptyScans} consecutive empty scans)`);
 
-        const target = candidates[0];
-        const analysis = await analyzeTweet({
-            tweet_id: target.tweet_id,
-            tweet_text: target.tweet_text,
-            user_handle: target.user_handle,
-            movie_title: STATE.currentMovieTitle,
-            movie_year: STATE.currentMovieYear,
-            search_lang: STATE.currentSearchLang // Pass language for reply
-        });
+            // After N consecutive empty scans, mark for rotation
+            if (STATE.consecutiveEmptyScans >= CONFIG.EMPTY_SCANS_BEFORE_ROTATE) {
+                log('🔄 Search term exhausted! Flagging for rotation...');
+                STATE.shouldRotateKeyword = true;
+                saveState();
+            }
+            return 'NO_CANDIDATES';
+        }
 
-        if (analysis.action !== 'REPLY' || !analysis.draft) return 'SKIP';
+        // Reset counter when we find candidates
+        STATE.consecutiveEmptyScans = 0;
 
-        STATE.phase = PHASES.REPLYING;
-        if (CONFIG.DRY_RUN) {
-            log('[DRY RUN] Would post:', analysis.draft);
+        // PROCESS MULTIPLE CANDIDATES (up to MAX_REPLIES_PER_SCAN per cycle)
+        let repliesThisScan = 0;
+
+        for (const target of candidates) {
+            // Check limits
+            if (repliesThisScan >= CONFIG.MAX_REPLIES_PER_SCAN) {
+                log(`Reached MAX_REPLIES_PER_SCAN (${CONFIG.MAX_REPLIES_PER_SCAN}), stopping this scan`);
+                break;
+            }
+            if (STATE.repliesThisHour >= CONFIG.MAX_REPLIES_PER_HOUR) {
+                log(`Reached MAX_REPLIES_PER_HOUR (${CONFIG.MAX_REPLIES_PER_HOUR}), stopping`);
+                break;
+            }
+
+            // Wait for cooldown if needed (skip in DRY_RUN for fast testing)
+            if (!CONFIG.DRY_RUN) {
+                const timeSinceLastReply = Date.now() - STATE.lastReplyTime;
+                if (timeSinceLastReply < CONFIG.REPLY_COOLDOWN) {
+                    const waitTime = CONFIG.REPLY_COOLDOWN - timeSinceLastReply + 1000;
+                    log(`Cooldown: waiting ${Math.round(waitTime / 1000)}s before next reply...`);
+                    await sleep(waitTime);
+                }
+            }
+
+            // Analyze this tweet
+            log(`Analyzing candidate ${repliesThisScan + 1}: @${target.user_handle}`);
+            const analysis = await analyzeTweet({
+                tweet_id: target.tweet_id,
+                tweet_text: target.tweet_text,
+                user_handle: target.user_handle,
+                movie_title: STATE.currentMovieTitle,
+                search_category: STATE.currentSearchCategory,
+                search_lang: STATE.currentSearchLang,
+                thread_replies: target.thread_replies
+            });
+
+            if (analysis.action !== 'REPLY' || !analysis.draft) {
+                log(`⏭️ Skipped: ${target.tweet_id} - ${analysis.reason}`);
+                continue;
+            }
+
+            // Track sentiment
+            if (analysis.sentiment && STATE.sentimentStats[analysis.sentiment] !== undefined) {
+                STATE.sentimentStats[analysis.sentiment]++;
+            }
+
+            STATE.phase = PHASES.REPLYING;
+
+            // VALIDATION: Check for hashtags and features
+            const hasHashtag = analysis.draft.includes('#');
+            const hasFeatures = /no ads?|free|4k|hd|dolby|no popup|no signup/i.test(analysis.draft);
+            const hasSite = analysis.draft.includes('streamixapp.pages.dev');
+
+            if (CONFIG.DRY_RUN) {
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                log('[DRY RUN] ✉️ Reply:', analysis.draft);
+                log('[DRY RUN] 📊 Checks:',
+                    hasSite ? '✅ Site' : '❌ Site',
+                    hasHashtag ? '✅ Hashtag' : '❌ Hashtag',
+                    hasFeatures ? '✅ Features' : '❌ Features'
+                );
+                log('[DRY RUN] 💭 Tweet:', target.tweet_text.substring(0, 80) + '...');
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            }
+
             STATE.lastReplyTime = Date.now();
             STATE.repliesThisHour++;
             STATE.repliesToday++;
-            saveState();
-            return 'DRY_RUN';
+            STATE.estimatedReach += 150;
+            repliesThisScan++;
+
+            // Short delay between replies (even in dry run to simulate real behavior)
+            if (repliesThisScan < candidates.length) {
+                await sleep(randomBetween(2000, 4000));
+            }
         }
 
-        return 'SUCCESS';
+        saveState();
+        log(`🏁 Scan complete: ${repliesThisScan} replies this scan, ${STATE.repliesThisHour} this hour`);
+        return repliesThisScan > 0 ? 'SUCCESS' : 'NO_MATCHES';
+    }
+
+    // v8.0: Extract existing thread replies for context-aware responses
+    function extractThreadReplies(tweetEl) {
+        const replies = [];
+        try {
+            // Look for reply thread context (parent tweet or sibling replies)
+            const container = tweetEl.closest('[data-testid="cellInnerDiv"]');
+            if (!container) return replies;
+
+            // Get sibling tweets (other replies in thread)
+            const siblings = container.parentElement?.querySelectorAll('[data-testid="tweetText"]') || [];
+            siblings.forEach((el, index) => {
+                if (index > 0 && index <= 3) { // Get up to 3 existing replies
+                    const text = el.innerText?.trim();
+                    if (text && text.length < 280) {
+                        replies.push(text);
+                    }
+                }
+            });
+        } catch (e) {
+            log('Error extracting thread replies:', e);
+        }
+        return replies.slice(0, 3);
     }
 
     function extractTweetData(el) {
@@ -785,26 +945,39 @@
 
     function createUI() {
         const p = document.createElement('div');
-        p.id = 'xbot-v71';
+        p.id = 'xbot-v80';
         p.innerHTML = `
             <style>
-                #xbot-v71 {
+                #xbot-v80 {
                     position: fixed; bottom: 20px; right: 20px;
-                    background: #15202b; border: 1px solid #38444d; border-radius: 12px;
-                    padding: 12px; z-index: 9999; color: white; font-family: sans-serif; min-width: 200px;
+                    background: linear-gradient(135deg, #15202b 0%, #1c2938 100%);
+                    border: 1px solid #38444d; border-radius: 16px;
+                    padding: 16px; z-index: 9999; color: white; 
+                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                    min-width: 240px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 }
-                #xbot-v71 h4 { margin: 0 0 8px 0; color: #1da1f2; }
-                #xbot-v71 div { font-size: 11px; margin: 4px 0; }
-                #xbot-v71 button { width: 100%; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer; }
-                #xbot-v71 .start { background: #1da1f2; color: white; }
-                #xbot-v71 .stop { background: #e0245e; color: white; }
+                #xbot-v80 h4 { margin: 0 0 12px 0; color: #1da1f2; font-size: 14px; }
+                #xbot-v80 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+                #xbot-v80 .stat { background: rgba(29,161,242,0.1); padding: 8px; border-radius: 8px; text-align: center; }
+                #xbot-v80 .stat-value { font-size: 18px; font-weight: bold; color: #1da1f2; }
+                #xbot-v80 .stat-label { font-size: 9px; color: #8899a6; text-transform: uppercase; }
+                #xbot-v80 .info { font-size: 11px; margin: 4px 0; color: #8899a6; }
+                #xbot-v80 .info span { color: white; }
+                #xbot-v80 button { width: 100%; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: all 0.2s; }
+                #xbot-v80 .start { background: linear-gradient(135deg, #1da1f2 0%, #0d8bd9 100%); color: white; }
+                #xbot-v80 .stop { background: linear-gradient(135deg, #e0245e 0%, #c01e50 100%); color: white; }
+                #xbot-v80 button:hover { transform: scale(1.02); }
             </style>
-            <h4>🚀 XBot v7.1</h4>
-            <div id="ui-status">Status: Stopped</div>
-            <div id="ui-region">Region: --</div>
-            <div id="ui-phase">Phase: --</div>
-            <div id="ui-step">Step: --</div>
-            <button id="ui-toggle" class="start">Start Bot</button>
+            <h4>🚀 XBot v8.0 | Million Engine</h4>
+            <div class="stats">
+                <div class="stat"><div class="stat-value" id="ui-replies">0</div><div class="stat-label">Replies Today</div></div>
+                <div class="stat"><div class="stat-value" id="ui-reach">0</div><div class="stat-label">Est. Reach</div></div>
+            </div>
+            <div class="info">Status: <span id="ui-status">Stopped</span></div>
+            <div class="info">Region: <span id="ui-region">--</span> (<span id="ui-lang">--</span>)</div>
+            <div class="info">Phase: <span id="ui-phase">--</span></div>
+            <div class="info">Category: <span id="ui-category">--</span></div>
+            <button id="ui-toggle" class="start">▶ Start Engine</button>
         `;
         document.body.appendChild(p);
         document.getElementById('ui-toggle').onclick = toggleBot;
@@ -812,13 +985,22 @@
     }
 
     function updateUI() {
-        document.getElementById('ui-status').innerText = `Status: ${STATE.isRunning ? 'Running' : 'Stopped'}`;
-        document.getElementById('ui-region').innerText = `Region: ${STATE.currentRegion || '--'}`;
-        document.getElementById('ui-phase').innerText = `Phase: ${STATE.phase}`;
-        document.getElementById('ui-step').innerText = `Step: ${STATE.locationSwitchStep}`;
+        document.getElementById('ui-status').innerText = STATE.isRunning ? '🟢 Running' : '🔴 Stopped';
+        document.getElementById('ui-region').innerText = STATE.currentRegion || '--';
+        document.getElementById('ui-lang').innerText = (STATE.currentLang || '--').toUpperCase();
+        document.getElementById('ui-phase').innerText = STATE.phase;
+        document.getElementById('ui-category').innerText = STATE.currentSearchCategory || '--';
+        document.getElementById('ui-replies').innerText = STATE.repliesToday || 0;
+        document.getElementById('ui-reach').innerText = formatNumber(STATE.estimatedReach || 0);
         const btn = document.getElementById('ui-toggle');
-        btn.innerText = STATE.isRunning ? 'Stop Bot' : 'Start Bot';
+        btn.innerText = STATE.isRunning ? '⏹ Stop Engine' : '▶ Start Engine';
         btn.className = STATE.isRunning ? 'stop' : 'start';
+    }
+
+    function formatNumber(num) {
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return num.toString();
     }
 
     function toggleBot() {
