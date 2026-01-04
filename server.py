@@ -649,83 +649,52 @@ class SmartSearch:
         if self.last_ai_generation and (datetime.now(timezone.utc) - self.last_ai_generation).seconds < 1800:
             return self.ai_terms_cache
         
-        prompt = """Generate 50 unique X.com (Twitter) search queries that will find posts from MOVIE and TV SHOW LOVERS.
+        prompt = """Generate 50 unique X.com (Twitter) search queries that will find HIGH-ENGAGEMENT posts where MOVIE/TV LOVERS congregate.
 
-RULES:
-- Each term should attract people discussing movies, TV shows, or streaming
-- Be CREATIVE and VARIED - cover ALL categories below
-- Focus on 2025 content and timeless queries (NOT 2025 - it just started)
-- NO frustration terms like "netflix expensive" - these yield old posts
+=== CORE STRATEGY ===
+We want to find POSTS THAT ACT AS HONEYPOTS for movie lovers. These are posts that movie enthusiasts engage with - lists, rankings, tier lists, recommendations.
 
-=== MANDATORY CATEGORIES (INCLUDE AT LEAST 2 FROM EACH) ===
+=== PRIORITY 1: TOP/BEST LISTS (HIGHEST VALUE - 60% of terms) ===
+These posts naturally aggregate movie lovers who comment, debate, and seek recommendations:
+- "top 50 movies" / "top 100 movies" / "top 10 movies"
+- "top 20 movies 2025" / "top 10 shows 2025"
+- "best movies of all time" / "greatest films ever"
+- "my movie tier list" / "my tv show ranking"
+- "movies I recommend" / "best movies to watch"
+- "rating every movie I watched" / "my movie diary"
+- "movies everyone should watch" / "must see films"
 
-1. MOVIES 2025:
-   "best movies 2025", "top movies 2025", "most anticipated movies 2025"
-   "movies releasing 2025", "upcoming movies", "new movies"
+=== PRIORITY 2: CURATED RECOMMENDATIONS (25% of terms) ===
+- "underrated movies" / "hidden gem movies"
+- "movies that changed my life" / "comfort movies"
+- "perfect movies" / "10/10 movies"
+- "movies to watch before you die"
+- "criminally underrated shows"
 
-2. TV SHOWS 2025:
-   "best tv shows 2025", "new series 2025", "top shows 2025"
-   "must watch series", "best new shows", "trending tv shows"
+=== PRIORITY 3: DISCOVERY MODE (15% of terms) ===
+Active recommendation seeking:
+- "what should I watch" / "movie recommendations"
+- "looking for good movies" / "need show recommendations"
+- "binge worthy shows" / "what to binge"
 
-3. AWARD SEASON:
-   "Oscar nominations", "Oscar predictions", "Golden Globe winners"
-   "Emmy nominations", "best picture nominees", "award season movies"
+=== DO NOT INCLUDE ===
+❌ Actor/director specific: "Jordan Peele movies", "Margot Robbie", "Timothee Chalamet"
+❌ Specific franchises: "Marvel movies", "Star Wars", "Harry Potter"
+❌ Single movie titles
+❌ Frustration terms: "netflix expensive", "canceling subscription"
+❌ News/reviews: "movie review", "just watched"
 
-4. ALL GENRES:
-   "best horror movies 2025", "top thriller movies", "best comedy films"
-   "best action movies 2025", "romantic movies to watch", "sci-fi movies"
-   "best drama movies", "psychological thrillers", "scary movies 2025"
+=== WHY THIS WORKS ===
+Posts like "my top 50 movies" attract:
+- The poster (movie lover)
+- People debating the list (movie lovers)
+- People asking "where to watch X?" (high intent)
+- People sharing their own lists (engagement)
 
-5. FRANCHISES (VERY IMPORTANT!):
-   "Marvel movies", "MCU", "Avengers movies"
-   "DC movies", "Batman movies", "Superman movies"
-   "Star Wars movies", "Harry Potter series", "Lord of the Rings"
-   "Dune movies", "Fast and Furious", "Mission Impossible"
+This is the IDEAL audience for a streaming site recommendation.
 
-6. K-DRAMA & INTERNATIONAL:
-   "best kdrama 2025", "korean drama recommendations", "top kdrama"
-   "spanish shows to watch", "bollywood movies 2025", "japanese movies"
-   "french films", "international movies", "foreign films to watch"
-
-7. ANIME (HUGE AUDIENCE!):
-   "best anime 2025", "top anime", "new anime releases"
-   "anime recommendations", "anime movies", "best anime movies"
-
-8. MOODS & EMOTIONS:
-   "feel good movies", "comfort movies to watch", "sad movies to cry"
-   "date night movies", "weekend movies", "movies to watch when bored"
-   "uplifting movies", "mind-bending movies", "inspiring films"
-
-9. STREAMING NEWS:
-   "new on Netflix", "leaving Netflix this month", "new on Disney Plus"
-   "coming to HBO Max", "streaming this week", "what to watch this weekend"
-
-10. DOCUMENTARIES:
-    "best documentaries 2025", "true crime documentaries", "nature documentaries"
-    "documentary recommendations", "must watch documentaries"
-
-11. FAMILY & KIDS:
-    "family movies", "kids movies", "animated movies 2025"
-    "Disney movies", "Pixar movies", "best animated films"
-
-12. BINGE CULTURE:
-    "shows to binge", "binge worthy shows", "what to binge watch"
-    "addictive tv shows", "shows you cant stop watching"
-
-13. ACTORS (USE FAMOUS NAMES!):
-    "best [Timothee Chalamet/Zendaya/Tom Holland/Sydney Sweeney/etc] movies"
-    "top 10 [Leonardo DiCaprio/Margot Robbie/etc] performances"
-
-14. DIRECTORS:
-    "Christopher Nolan movies", "Tarantino best films", "Denis Villeneuve movies"
-    "Greta Gerwig films", "Jordan Peele movies"
-
-15. DECADES:
-    "best 90s movies", "80s horror movies", "2000s classic films"
-    "nostalgic movies", "childhood movies"
-
-Return ONLY a JSON array of 50 search terms, nothing else. Be diverse!
-Example: ["best Zendaya movies", "top anime 2025", "Oscar predictions", "Marvel movies", ...]"""
+Return ONLY a JSON array of 50 search terms, nothing else. Make 60% list-based, 25% curated, 15% discovery.
+Example: ["top 50 movies", "best shows 2025", "my movie tier list", "underrated movies", "what should I watch"]"""
 
         try:
             response = self.groq_client.chat.completions.create(
@@ -853,70 +822,35 @@ Example: ["best Zendaya movies", "top anime 2025", "Oscar predictions", "Marvel 
                     "lang_code": lang_code,
                 }
         
-        # Ensure pool is populated for fallback
-        self.generate_search_terms(lang_code, region)
-        
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Select term not used in last 6 hours
-            six_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
-            
-            cursor.execute("""
-                SELECT * FROM search_term_pool 
-                WHERE lang_code = ? 
-                AND (last_used_at IS NULL OR last_used_at < ?)
-                ORDER BY 
-                    CASE category 
-                        WHEN 'viral_lists' THEN 1 
-                        WHEN 'trending' THEN 2 
-                        WHEN 'recommendation' THEN 3 
-                        ELSE 4
-                    END,
-                    popularity DESC,
-                    random()
-                LIMIT 1
-            """, (lang_code, six_hours_ago))
-            
-            row = cursor.fetchone()
-            
-            if row:
-                cursor.execute("""
-                    UPDATE search_term_pool 
-                    SET last_used_at = ?, use_count = use_count + 1
-                    WHERE id = ?
-                """, (datetime.now(timezone.utc).isoformat(), row["id"]))
-                conn.commit()
-                
-                return {
-                    "search_term": row["term"],
-                    "title": row["title"],
-                    "category": row["category"],
-                    "tmdb_id": row["tmdb_id"],
-                    "lang_code": lang_code,
-                }
-            
-            # Fallback for Nordic (title-only languages)
-            if lang_code in ["sv", "no", "da"]:
-                content = self.tmdb.get_trending_global()
-                if content:
-                    title = content[0].get("title", "Avatar")
-                    return {
-                        "search_term": f"{title} lang:{lang_code}",
-                        "title": title,
-                        "category": "trending",
-                        "tmdb_id": content[0].get("id", 0),
-                        "lang_code": lang_code,
-                    }
-            
-            # Ultimate fallback
+        # v9.0: ALWAYS use AI-generated list-based terms (not TMDB specific titles)
+        # The AI prompt is designed for honeypot terms like "top 50 movies", "my movie tier list"
+        ai_terms = self.generate_ai_search_terms()
+        if ai_terms:
+            import random
+            term = random.choice(ai_terms)
+            print(f"[AI Search v9.0] Using list-based term: {term}")
             return {
-                "search_term": "recommend me a movie" if lang_code == "en" else f"Film lang:{lang_code}",
-                "title": "Generic",
-                "category": "fallback",
+                "search_term": term,
+                "title": "AI-Generated",
+                "category": "ai_list",
                 "tmdb_id": 0,
                 "lang_code": lang_code,
             }
+        
+        # Ultimate fallback - still use list-based terms, not movie titles
+        fallback_list_terms = [
+            "top 50 movies", "best movies of all time", "my movie tier list",
+            "movies everyone should watch", "underrated movies", "best shows 2025",
+            "what should I watch", "movie recommendations", "binge worthy shows"
+        ]
+        import random
+        return {
+            "search_term": random.choice(fallback_list_terms),
+            "title": "Fallback",
+            "category": "list_fallback",
+            "tmdb_id": 0,
+            "lang_code": lang_code,
+        }
 
 # ============================================================================
 # PYDANTIC MODELS
@@ -1019,21 +953,6 @@ class LLMClient:
         
         lang_name = LANG_NAMES.get(lang_code, "English")
         
-        # HASHTAG ROTATION: Pick a specific hashtag for this reply (rotates through all)
-        if trends and len(trends) > 0:
-            selected_hashtag = random.choice(trends)  # Random selection for variety
-            trends_str = f"{selected_hashtag} (USE THIS EXACT HASHTAG)"
-        else:
-            selected_hashtag = "#Movies"
-            trends_str = "#Movies, #Streaming"
-        
-        # Get native phrases for authentic voice
-        phrases = NATIVE_PHRASES.get(lang_code, NATIVE_PHRASES["en"])
-        check_phrases = ", ".join(phrases.get("check_it", ["check out"]))
-        good_words = ", ".join(phrases.get("good", ["fire"]))
-        reactions = ", ".join(phrases.get("reaction", ["fr"]))
-        emojis = " ".join(phrases.get("emoji", ["🔥"]))
-        
         # Build context blocks
         context_blocks = []
         
@@ -1066,69 +985,75 @@ class LLMClient:
         
         context_section = "\n".join(context_blocks) if context_blocks else "No additional context."
         
-        system_prompt = f"""You are a curious movie fan who recently discovered streamixapp.pages.dev. 
-You're NOT promoting it - you're genuinely WONDERING if it has what people are looking for.
+        system_prompt = f"""You are a REAL movie fan who uses streamixapp.pages.dev every week. You KNOW it's good because you use it.
 
 === THE TWEET ===
 "{tweet_text}"
 
 === YOUR MISSION ===
-Create a QUESTION-BASED reply that makes people CURIOUS to click the link.
-You're not telling them to use it - you're WONDERING ALOUD if it has what they need.
+Create a CONFIDENT reply that convinces people to try streamixapp.pages.dev.
+You're not wondering - you KNOW it works because you've used it.
 
-=== QUESTION FORMATS (USE THESE!) ===
+=== REPLY PATTERNS (ROTATE BETWEEN THESE) ===
 
-For movie lists/recommendations:
-- "wait does streamixapp.pages.dev actually have all these in 4K? 👀"
-- "hmm I wonder if streamixapp.pages.dev has these with no popups..."
-- "has anyone checked streamixapp.pages.dev for new releases? no ads supposedly"
+PATTERN 1 - Personal Experience:
+"I watched like 8 of these on streamixapp.pages.dev last month, no signup + actual 4K quality 🔥"
+"been using streamixapp.pages.dev for a few months now, works better than the paid stuff tbh"
 
-For specific movies:
-- "does streamixapp.pages.dev have [movie]? heard it's free there"
-- "wait is [movie] on streamixapp.pages.dev? no signup needed apparently"
+PATTERN 2 - Social Proof:
+"my friend group all switched to streamixapp.pages.dev, genuinely free with no popups"
+"half my timeline uses streamixapp.pages.dev now lol, no ads is a game changer"
 
-For frustration/complaints:
-- "have you tried streamixapp.pages.dev? supposedly no subscription needed 🤔"
-- "wonder if streamixapp.pages.dev is actually free like they say..."
+PATTERN 3 - Direct Recommendation:
+"streamixapp.pages.dev has this in HD btw, been using it since last year. actually free"
+"check streamixapp.pages.dev, I use it daily. free + no signup needed"
 
-For "where to watch" questions:
-- "maybe check streamixapp.pages.dev? it has HD no ads from what I've seen"
-- "streamixapp.pages.dev might have it? free + no popups supposedly"
+PATTERN 4 - Problem Solver:
+"felt this. I ditched my subscriptions for streamixapp.pages.dev - free, no popups, works perfectly"
+"same problem. streamixapp.pages.dev fixed it for me, no ads and actually HD quality"
+
+PATTERN 5 - Urgency/Scarcity:
+"streamixapp.pages.dev still free for now, been my go-to for months. no idea how long it'll last"
+"use streamixapp.pages.dev while it's still up, no subscription and it actually works"
 
 === CONTEXT ===
 {context_section}
 
 === STRICT RULES ===
 1. Under 140 characters
-2. ALWAYS include streamixapp.pages.dev
-3. ALWAYS include ONE hashtag from: {trends_str}
-4. USE QUESTION FORMAT - wondering, curious, asking
-5. Include 1-2 benefits: 4K, no ads, no popups, free, no signup
-6. Sound like a REAL person wondering, NOT a marketer
+2. ALWAYS include streamixapp.pages.dev (once only, no https://)
+3. NO HASHTAGS - they look promotional
+4. Be CONFIDENT, not uncertain ("I use this" not "I wonder if")
+5. Include 1 SPECIFIC benefit: 4K, no signup, no ads, free, no popups
+6. Sound like a real person sharing a tip with a friend
+7. Reference the actual movie/show if mentioned in the tweet
+8. Match the tweet's energy (excited → excited, frustrated → empathetic)
 
 === SKIP THESE ===
 ❌ Sports, politics, gaming, packages, music → output SKIP
+❌ Brand/corporate accounts → SKIP
+❌ Old posts (before 2025) → SKIP
 
 === EXAMPLES ===
 
-Tweet: "Top 50 Movies January 2025 🎬"
-Reply: "wait does streamixapp.pages.dev have all these in 4K? no popups too 👀 #Movies"
+Tweet: "my top 50 movies of 2024 🎬"
+Reply: "watched most of these on streamixapp.pages.dev, actually 4K and no signup needed 🔥"
 
 Tweet: "where can I watch Zootopia 2"
-Reply: "does streamixapp.pages.dev have Zootopia 2? supposedly free + HD 🤔 #Streaming"
+Reply: "streamixapp.pages.dev has it in HD, been using it for months. free + no popups"
 
-Tweet: "netflix is too expensive"
-Reply: "have you tried streamixapp.pages.dev? no subscription needed apparently #Netflix"
+Tweet: "netflix is so expensive now"
+Reply: "felt this. I use streamixapp.pages.dev now, actually free and better quality imo"
 
-Tweet: "best movies to watch this month"
-Reply: "hmm wonder if streamixapp.pages.dev has new releases in 4K... no ads btw 👀 #Film"
+Tweet: "best thriller movies to watch this weekend"
+Reply: "streamixapp.pages.dev has a ton of these, I binged like 5 last week. no ads btw"
 
-Tweet: "I need something good to watch"
-Reply: "maybe streamixapp.pages.dev? tons of free stuff, no signup from what I know 🎬 #Movies"
+Tweet: "I need something good to watch tonight"
+Reply: "check streamixapp.pages.dev, I find all my stuff there. free + no signup"
 
 === OUTPUT (JSON) ===
-If streaming-related: {{"action": "REPLY", "reason": "brief", "draft": "your QUESTION-BASED reply", "trend": "#Hashtag"}}
-If not streaming: {{"action": "SKIP", "reason": "not streaming - [topic]", "draft": null}}
+If movie/TV related: {{"action": "REPLY", "reason": "brief", "draft": "your CONFIDENT reply"}}
+If not relevant: {{"action": "SKIP", "reason": "not movie/TV - [topic]", "draft": null}}
 """
 
 

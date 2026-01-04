@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XBot v8.0 (Million Visitor Engine)
+// @name         XBot v9.0 (Movie Lover Honeypot Engine)
 // @namespace    http://tampermonkey.net/
-// @version      8.0
-// @description  X.com Bot - Advanced AI Orchestrator with Tier 1 High-CPM Targeting
+// @version      9.0
+// @description  X.com Bot - List-based targeting with confident social-proof replies
 // @author       XBot
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -32,6 +32,7 @@
         MAX_REPLIES_PER_HOUR: 60,       // Aggressive
         MAX_REPLIES_PER_SCAN: 100,      // Process ALL candidates
         MAX_REPLIES_PER_DAY: 500,       // High daily limit
+        MIN_IMPRESSIONS: 2000,          // v9.0: Only target posts with 2K+ impressions
         DRY_RUN: true,
         DEBUG: true
     };
@@ -158,8 +159,30 @@
     }
 
     // ========================================================================
-    // PERSISTENCE
+    // PERSISTENCE (v9.0: Improved counter persistence)
     // ========================================================================
+
+    // v9.0: Persistent daily counter that survives page navigation
+    function getDailyCount() {
+        const today = new Date().toDateString();
+        const stored = GM_getValue('xbot_daily_counter', { date: '', count: 0 });
+        if (stored.date !== today) {
+            return 0;
+        }
+        return stored.count;
+    }
+
+    function incrementDailyCount() {
+        const today = new Date().toDateString();
+        const stored = GM_getValue('xbot_daily_counter', { date: '', count: 0 });
+        if (stored.date !== today) {
+            GM_setValue('xbot_daily_counter', { date: today, count: 1 });
+            return 1;
+        }
+        const newCount = stored.count + 1;
+        GM_setValue('xbot_daily_counter', { date: today, count: newCount });
+        return newCount;
+    }
 
     function saveState() {
         const data = {
@@ -175,7 +198,6 @@
             lastKeywordRotation: STATE.lastKeywordRotation,
             lastTrendHarvest: STATE.lastTrendHarvest,
             repliesThisHour: STATE.repliesThisHour,
-            repliesToday: STATE.repliesToday,
             lastReplyTime: STATE.lastReplyTime,
             hourStartTime: STATE.hourStartTime,
 
@@ -188,12 +210,16 @@
             locationSwitchStep: STATE.locationSwitchStep,
             timestamp: Date.now()
         };
-        GM_setValue('xbot_state_v80', JSON.stringify(data));
+        GM_setValue('xbot_state_v90', JSON.stringify(data));
     }
 
     function loadState() {
         try {
-            const saved = GM_getValue('xbot_state_v80', null);
+            // Try v90 first, then fallback to v80 for migration
+            let saved = GM_getValue('xbot_state_v90', null);
+            if (!saved) {
+                saved = GM_getValue('xbot_state_v80', null);
+            }
             if (!saved) return false;
 
             const data = JSON.parse(saved);
@@ -224,7 +250,10 @@
                 STATE.hourStartTime = data.hourStartTime;
             }
 
-            log('State loaded, isRunning:', STATE.isRunning, 'locationStep:', STATE.locationSwitchStep);
+            // v9.0: Load persistent daily counter
+            STATE.repliesToday = getDailyCount();
+
+            log('State loaded, isRunning:', STATE.isRunning, 'repliesToday:', STATE.repliesToday);
             return true;
         } catch (e) {
             return false;
@@ -651,7 +680,7 @@
                     log(`Smart Search: "${searchData.search_term}" (Title: ${searchData.title}, Lang: ${searchData.lang_code}, Category: ${searchData.category})`);
                     saveState();
 
-                    window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
+                    window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query`;
                     return 'NAVIGATING';
                 }
             } catch (e) {
@@ -668,7 +697,7 @@
             const keyword = keywordList[STATE.currentKeywordIndex % keywordList.length];
             log('Fallback: Navigating to search for:', keyword);
             saveState();
-            window.location.href = `https://x.com/search?q=${encodeURIComponent(keyword)}&src=typed_query&f=live`;
+            window.location.href = `https://x.com/search?q=${encodeURIComponent(keyword)}&src=typed_query`;
             return 'NAVIGATING';
         }
 
@@ -693,7 +722,7 @@
                     log(`📍 New Search: "${searchData.search_term}" (${searchData.category})`);
                     saveState();
 
-                    window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query&f=live`;
+                    window.location.href = `https://x.com/search?q=${encodeURIComponent(searchData.search_term)}&src=typed_query`;
                     return 'NAVIGATING';
                 }
             } catch (e) {
@@ -705,66 +734,31 @@
     }
 
     async function scanAndReply() {
-        log('=== SCANNING ===');
+        log('=== SCANNING (v9.0 Per-Post Analysis) ===');
         STATE.phase = PHASES.SCANNING;
 
-        // AGGRESSIVE SCROLLING - 10 passes to load ALL tweets
-        const scrollPasses = 10;
+        // Gentle scrolling to load tweets progressively
+        const scrollPasses = 5;
         for (let scrollPass = 0; scrollPass < scrollPasses; scrollPass++) {
             log(`Scroll ${scrollPass + 1}/${scrollPasses}...`);
-            window.scrollBy({ top: randomBetween(1000, 1500), behavior: 'smooth' });
-            await sleep(800); // Fast scrolling
+            window.scrollBy({ top: randomBetween(800, 1200), behavior: 'smooth' });
+            await sleep(1000);
         }
-        await sleep(1000);
+        await sleep(500);
 
         const tweets = document.querySelectorAll('article[data-testid="tweet"]');
-        const candidates = [];
+        log(`Found ${tweets.length} tweets on page`);
 
-        for (const tw of tweets) {
-            const data = extractTweetData(tw);
-            if (!data || STATE.processedTweets.has(data.tweet_id)) continue;
-
-            STATE.processedTweets.add(data.tweet_id);
-            if (isPromotedTweet(tw) || isVerifiedAccount(tw) || isBlockedAccount(data.user_handle) || containsIndiaContent(data.tweet_text)) continue;
-
-            // v8.1: Pre-filter for streaming relevance (saves API calls)
-            if (!isLikelyStreamingRelated(data.tweet_text)) {
-                log(`⏭️ Pre-filtered (not streaming): @${data.user_handle}`);
-                continue;
-            }
-
-            // v8.0: Extract thread replies for context
-            data.thread_replies = extractThreadReplies(tw);
-
-            candidates.push(data);
-        }
-
-        log('Total candidates found:', candidates.length);
-
-        // EXHAUSTION DETECTION: Track empty scans to know when to rotate
-        if (candidates.length === 0) {
-            STATE.consecutiveEmptyScans++;
-            log(`No new candidates (${STATE.consecutiveEmptyScans} consecutive empty scans)`);
-
-            // After N consecutive empty scans, mark for rotation
-            if (STATE.consecutiveEmptyScans >= CONFIG.EMPTY_SCANS_BEFORE_ROTATE) {
-                log('🔄 Search term exhausted! Flagging for rotation...');
-                STATE.shouldRotateKeyword = true;
-                saveState();
-            }
-            return 'NO_CANDIDATES';
-        }
-
-        // Reset counter when we find candidates
-        STATE.consecutiveEmptyScans = 0;
-
-        // PROCESS MULTIPLE CANDIDATES (up to MAX_REPLIES_PER_SCAN per cycle)
         let repliesThisScan = 0;
+        let analyzedCount = 0;
+        let skippedLowImpressions = 0;
+        let skippedOther = 0;
 
-        for (const target of candidates) {
-            // Check limits
+        // v9.0: PER-POST ANALYSIS - analyze each tweet individually
+        for (const tw of tweets) {
+            // Check limits first
             if (repliesThisScan >= CONFIG.MAX_REPLIES_PER_SCAN) {
-                log(`Reached MAX_REPLIES_PER_SCAN (${CONFIG.MAX_REPLIES_PER_SCAN}), stopping this scan`);
+                log(`Reached MAX_REPLIES_PER_SCAN (${CONFIG.MAX_REPLIES_PER_SCAN}), stopping`);
                 break;
             }
             if (STATE.repliesThisHour >= CONFIG.MAX_REPLIES_PER_HOUR) {
@@ -772,30 +766,69 @@
                 break;
             }
 
-            // Wait for cooldown if needed (skip in DRY_RUN for fast testing)
-            if (!CONFIG.DRY_RUN) {
-                const timeSinceLastReply = Date.now() - STATE.lastReplyTime;
-                if (timeSinceLastReply < CONFIG.REPLY_COOLDOWN) {
-                    const waitTime = CONFIG.REPLY_COOLDOWN - timeSinceLastReply + 1000;
-                    log(`Cooldown: waiting ${Math.round(waitTime / 1000)}s before next reply...`);
-                    await sleep(waitTime);
+            // Extract full tweet data including impressions
+            const data = extractTweetData(tw);
+            if (!data) continue;
+            if (STATE.processedTweets.has(data.tweet_id)) continue;
+            STATE.processedTweets.add(data.tweet_id);
+
+            // Basic filters (still apply before impression check)
+            if (isPromotedTweet(tw)) {
+                log(`⏭️ Skip: Promoted tweet`);
+                skippedOther++;
+                continue;
+            }
+            if (isBlockedAccount(data.user_handle)) {
+                log(`⏭️ Skip: Blocked account @${data.user_handle}`);
+                skippedOther++;
+                continue;
+            }
+            if (containsIndiaContent(data.tweet_text)) {
+                log(`⏭️ Skip: India content`);
+                skippedOther++;
+                continue;
+            }
+
+            // Date filter - skip posts older than 2025
+            if (data.datetime) {
+                const tweetYear = new Date(data.datetime).getFullYear();
+                if (tweetYear < 2025) {
+                    log(`⏭️ Skip: Old post (${tweetYear})`);
+                    skippedOther++;
+                    continue;
                 }
             }
 
-            // Analyze this tweet
-            log(`Analyzing candidate ${repliesThisScan + 1}: @${target.user_handle}`);
+            // v9.0: IMPRESSION THRESHOLD CHECK - Only process high-engagement posts
+            log(`📊 Post @${data.user_handle}: ${data.impressions} impressions`);
+            if (data.impressions < CONFIG.MIN_IMPRESSIONS) {
+                log(`⏭️ Skip: Low impressions (${data.impressions} < ${CONFIG.MIN_IMPRESSIONS})`);
+                skippedLowImpressions++;
+                continue;
+            }
+
+            // v9.0: This post has good impressions - now send to AI for deep analysis
+            log(`✅ High engagement post! Analyzing: "${data.tweet_text.substring(0, 60)}..."`);
+            analyzedCount++;
+
+            // Extract thread context
+            data.thread_replies = extractThreadReplies(tw);
+
+            // Send to AI for analysis - AI decides if this targets movie lovers
             const analysis = await analyzeTweet({
-                tweet_id: target.tweet_id,
-                tweet_text: target.tweet_text,
-                user_handle: target.user_handle,
+                tweet_id: data.tweet_id,
+                tweet_text: data.tweet_text,
+                user_handle: data.user_handle,
                 movie_title: STATE.currentMovieTitle,
                 search_category: STATE.currentSearchCategory,
                 search_lang: STATE.currentSearchLang,
-                thread_replies: target.thread_replies
+                thread_replies: data.thread_replies,
+                impressions: data.impressions  // Pass impressions to AI
             });
 
+            // AI decided to skip
             if (analysis.action !== 'REPLY' || !analysis.draft) {
-                log(`⏭️ Skipped: ${target.tweet_id} - ${analysis.reason}`);
+                log(`⏭️ AI Skip: ${analysis.reason}`);
                 continue;
             }
 
@@ -806,37 +839,54 @@
 
             STATE.phase = PHASES.REPLYING;
 
-            // VALIDATION: Check for hashtags and features
-            const hasHashtag = analysis.draft.includes('#');
+            // Validation checks
             const hasFeatures = /no ads?|free|4k|hd|dolby|no popup|no signup/i.test(analysis.draft);
             const hasSite = analysis.draft.includes('streamixapp.pages.dev');
+            const tweetUrl = `https://x.com/${data.user_handle}/status/${data.tweet_id}`;
 
-            if (CONFIG.DRY_RUN) {
-                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                log('[DRY RUN] ✉️ Reply:', analysis.draft);
-                log('[DRY RUN] 📊 Checks:',
-                    hasSite ? '✅ Site' : '❌ Site',
-                    hasHashtag ? '✅ Hashtag' : '❌ Hashtag',
-                    hasFeatures ? '✅ Features' : '❌ Features'
-                );
-                log('[DRY RUN] 💭 Tweet:', target.tweet_text.substring(0, 80) + '...');
-                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            }
+            // v9.0: Enhanced logging - full details for each post
+            log('');
+            log('╔══════════════════════════════════════════════════════════════════╗');
+            log(`║ POST #${analyzedCount} - ${CONFIG.DRY_RUN ? '[DRY RUN]' : '[LIVE]'}`);
+            log('╠══════════════════════════════════════════════════════════════════╣');
+            log(`║ 🔗 URL: ${tweetUrl}`);
+            log(`║ 👤 Author: @${data.user_handle}`);
+            log(`║ 📊 Impressions: ${data.impressions.toLocaleString()}`);
+            log('╠══════════════════════════════════════════════════════════════════╣');
+            log('║ 💬 ORIGINAL TWEET:');
+            log(`║ "${data.tweet_text}"`);
+            log('╠══════════════════════════════════════════════════════════════════╣');
+            log('║ ✉️ OUR REPLY:');
+            log(`║ "${analysis.draft}"`);
+            log('╠══════════════════════════════════════════════════════════════════╣');
+            log(`║ ✓ Checks: ${hasSite ? '✅ Site' : '❌ Site'} | ${hasFeatures ? '✅ Features' : '⚠️ Features'}`);
+            log('╚══════════════════════════════════════════════════════════════════╝');
+            log('');
 
             STATE.lastReplyTime = Date.now();
             STATE.repliesThisHour++;
-            STATE.repliesToday++;
-            STATE.estimatedReach += 150;
+            STATE.repliesToday = incrementDailyCount(); // v9.0: Persistent counter
+            STATE.estimatedReach += data.impressions * 0.05; // Estimate 5% of impressions as reach
             repliesThisScan++;
 
-            // Short delay between replies (even in dry run to simulate real behavior)
-            if (repliesThisScan < candidates.length) {
-                await sleep(randomBetween(2000, 4000));
+            // Delay between posts (human-like pacing)
+            await sleep(randomBetween(3000, 6000));
+        }
+
+        // EXHAUSTION DETECTION
+        if (analyzedCount === 0) {
+            STATE.consecutiveEmptyScans++;
+            log(`No high-engagement candidates (${STATE.consecutiveEmptyScans} consecutive empty scans)`);
+            if (STATE.consecutiveEmptyScans >= CONFIG.EMPTY_SCANS_BEFORE_ROTATE) {
+                log('🔄 Search term exhausted! Flagging for rotation...');
+                STATE.shouldRotateKeyword = true;
             }
+        } else {
+            STATE.consecutiveEmptyScans = 0;
         }
 
         saveState();
-        log(`🏁 Scan complete: ${repliesThisScan} replies this scan, ${STATE.repliesThisHour} this hour`);
+        log(`🏁 Scan complete: ${repliesThisScan} replies | ${analyzedCount} analyzed | ${skippedLowImpressions} low-impressions | ${skippedOther} filtered`);
         return repliesThisScan > 0 ? 'SUCCESS' : 'NO_MATCHES';
     }
 
@@ -872,8 +922,57 @@
             const textEl = el.querySelector('[data-testid="tweetText"]');
             const userEl = el.querySelector('[data-testid="User-Name"]');
             const handle = userEl?.innerText.match(/@(\w+)/)?.[1] || '';
-            return { tweet_id: id, tweet_text: textEl?.innerText || '', user_handle: handle };
+            // v8.1: Extract datetime for date filtering
+            const timeEl = el.querySelector('time');
+            const datetime = timeEl?.getAttribute('datetime') || null;
+
+            // v9.0: Extract impressions/views for threshold filtering
+            let impressions = 0;
+            // Method 1: Try to find the views/analytics link (e.g., "1.2K views")
+            const analyticsLink = el.querySelector('a[href*="/analytics"]');
+            if (analyticsLink) {
+                const viewsText = analyticsLink.innerText;
+                impressions = parseEngagementNumber(viewsText);
+            }
+            // Method 2: Try to find any element with views count pattern
+            if (impressions === 0) {
+                const allText = el.innerText;
+                const viewsMatch = allText.match(/(\d+(?:\.\d+)?[KMkm]?)\s*(?:views?|Views?)/i);
+                if (viewsMatch) {
+                    impressions = parseEngagementNumber(viewsMatch[1]);
+                }
+            }
+            // Method 3: Estimate from engagement (likes, retweets, replies)
+            if (impressions === 0) {
+                const likeBtn = el.querySelector('[data-testid="like"]');
+                const retweetBtn = el.querySelector('[data-testid="retweet"]');
+                const likeCount = likeBtn ? parseEngagementNumber(likeBtn.innerText) : 0;
+                const rtCount = retweetBtn ? parseEngagementNumber(retweetBtn.innerText) : 0;
+                // Rough estimate: impressions ≈ (likes + retweets) * 50
+                impressions = (likeCount + rtCount) * 50;
+            }
+
+            return {
+                tweet_id: id,
+                tweet_text: textEl?.innerText || '',
+                user_handle: handle,
+                datetime: datetime,
+                impressions: impressions
+            };
         } catch (e) { return null; }
+    }
+
+    // v9.0: Parse engagement numbers like "1.2K", "500", "2M"
+    function parseEngagementNumber(text) {
+        if (!text) return 0;
+        const cleaned = text.replace(/[^0-9.KMkm]/g, '');
+        const match = cleaned.match(/^(\d+(?:\.\d+)?)\s*([KMkm])?$/);
+        if (!match) return 0;
+        let num = parseFloat(match[1]);
+        const suffix = match[2]?.toUpperCase();
+        if (suffix === 'K') num *= 1000;
+        if (suffix === 'M') num *= 1000000;
+        return Math.round(num);
     }
 
     // ========================================================================
