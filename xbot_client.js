@@ -112,6 +112,21 @@
         'prabhas', 'rajinikanth', 'vijay', 'allu arjun'
     ];
 
+    // v9.3: Regional content filter for Indonesia/SEA (content site doesn't have)
+    const REGIONAL_KEYWORDS = [
+        // Indonesian
+        'indonesia', 'indonesian', 'bahasa', 'jakarta', 'agak laen',
+        'film indonesia', 'local film', 'admissions', 'penonton',
+        // Thai
+        'thailand', 'thai film', 'bangkok',
+        // Philippines  
+        'philippines', 'filipino', 'tagalog', 'manila', 'mmff',
+        // Vietnam
+        'vietnam', 'vietnamese', 'hanoi',
+        // Regional box office metrics
+        'juta penonton', 'million admissions'
+    ];
+
     // ========================================================================
     // PHASES & STEPS
     // ========================================================================
@@ -335,6 +350,12 @@
         return INDIA_KEYWORDS.some(kw => lower.includes(kw));
     }
 
+    // v9.3: Check for regional content (Indonesia, SEA, etc.)
+    function containsRegionalContent(text) {
+        const lower = text.toLowerCase();
+        return REGIONAL_KEYWORDS.some(kw => lower.includes(kw));
+    }
+
     function isVerifiedAccount(el) {
         return el.querySelector('svg[aria-label*="Verified"]') !== null;
     }
@@ -363,6 +384,31 @@
 
         // If it contains video game terms, it's NOT movie/TV related
         if (videoGameExclusions.some(term => lower.includes(term))) {
+            return false;
+        }
+
+        // v9.3 FIX: EXCLUDE professional/educational/medical content
+        // Words like "series" can mean "lecture series" or "education series"
+        const professionalExclusions = [
+            // Medical
+            'neuroradiology', 'radiology', 'cardiology', 'neurology', 'oncology',
+            'surgery', 'surgeon', 'physician', 'doctor', 'medical', 'clinical',
+            'patient', 'diagnosis', 'treatment', 'therapy', 'healthcare',
+            '#medtwitter', '#neurotwitter', 'hospital', 'nursing',
+            // Academic/Educational
+            'lecture', 'professor', 'university', 'phd', 'thesis', 'research',
+            'journal', 'published', 'peer-reviewed', 'academia', 'syllabus',
+            'course', 'curriculum', 'education series', 'webinar',
+            // Business/Finance
+            'startup', 'investment', 'stocks', 'crypto', 'blockchain', 'nft',
+            'quarterly', 'revenue', 'earnings', 'ipo', 'venture capital',
+            // Tech (non-entertainment)
+            'javascript', 'python', 'coding', 'developer', 'api', 'github',
+            'devops', 'kubernetes', 'aws', 'cloud computing'
+        ];
+
+        // If it contains professional/educational terms, it's NOT movie/TV related
+        if (professionalExclusions.some(term => lower.includes(term))) {
             return false;
         }
 
@@ -461,6 +507,15 @@
     async function postReply(tweetEl, text) {
         log('Starting reply sequence...');
 
+        // v9.3 FIX: Close any stale modals/editors before starting
+        const existingCloseBtn = document.querySelector('[data-testid="app-bar-close"]') ||
+            document.querySelector('[aria-label="Close"]');
+        if (existingCloseBtn) {
+            log('Closing stale modal...');
+            existingCloseBtn.click();
+            await sleep(500);
+        }
+
         // 1. Click Reply
         const replyBtn = tweetEl.querySelector('[data-testid="reply"]');
         if (!replyBtn) throw new Error("Reply button not found");
@@ -480,6 +535,15 @@
 
         if (!editor) {
             throw new Error("Editor not found");
+        }
+
+        // v9.3 FIX: Verify editor is empty (not a stale modal with text)
+        const existingText = editor.innerText?.trim();
+        if (existingText && existingText.length > 0) {
+            log('Warning: Editor has existing text, closing and aborting...');
+            const closeBtn = document.querySelector('[data-testid="app-bar-close"]');
+            if (closeBtn) closeBtn.click();
+            throw new Error("Stale editor detected");
         }
 
         // 3. Human Typing
@@ -505,9 +569,13 @@
         // 5. Wait for success/toast and cleanup
         await sleep(randomBetween(3000, 5000));
 
-        // Close modal if it's still open (sometimes X doesn't close on error)
-        // But usually successful post closes it. 
-        // We can check for the close button just in case, but let's trust the flow for now.
+        // v9.3: Ensure modal is closed after posting
+        const postCloseBtn = document.querySelector('[data-testid="app-bar-close"]');
+        if (postCloseBtn) {
+            log('Closing modal after post...');
+            postCloseBtn.click();
+            await sleep(500);
+        }
     }
 
     // ========================================================================
@@ -965,13 +1033,15 @@
                 skippedOther++;
                 continue;
             }
-
-            // v9.1: Movie/TV relevance check - skip non-movie content (like Amazon watch ads)
-            if (!isMovieTVRelated(data.tweet_text)) {
-                log(`⏭️ Skip: Not movie/TV related`);
+            // v9.3: Regional content filter (Indonesia, SEA, etc.)
+            if (containsRegionalContent(data.tweet_text)) {
+                log(`⏭️ Skip: Regional content (Indonesia/SEA)`);
                 skippedOther++;
                 continue;
             }
+
+            // v9.4: REMOVED isMovieTVRelated check - let AI decide relevance
+            // The AI is smarter at determining context than keyword matching
 
             // Date filter - skip posts older than 2025
             if (data.datetime) {
@@ -1075,10 +1145,9 @@
             STATE.estimatedReach += data.impressions * 0.05; // Estimate 5% of impressions as reach
             repliesThisScan++;
 
-            // v9.2: MANDATORY 1-MINUTE COOLDOWN check
-            // Random between 60s and 90s to stay safe and strict
-            log('⏳ Cooling down for 60-90 seconds...');
-            await sleep(randomBetween(60000, 90000));
+            // v9.3: Reduced cooldown (10 seconds)
+            log('⏳ Cooling down for 10 seconds...');
+            await sleep(10000);
         }
 
         // EXHAUSTION DETECTION
